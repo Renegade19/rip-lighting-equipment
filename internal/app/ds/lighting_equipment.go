@@ -1,5 +1,7 @@
 package ds
 
+import "time"
+
 // Статусы светильника
 const (
 	LightingEquipmentStatusDraft     = "черновик"
@@ -10,13 +12,34 @@ const (
 // LightingEquipment — услуга: модель светильника.
 // Два поля по предметной области: мощность (Вт) и угол рассеивания (°)
 type LightingEquipment struct {
-	EquipmentID      int
-	EquipmentName    string
-	ShortDescription string
-	EquipmentStatus  string
-	ImageKey         string // ключ изображения в Minio
-	VideoKey         string // ключ видео в Minio
-	PowerWatt        float64
-	BeamAngleDeg     int
-	LikedUserIDs     []int // id пользователей, поставивших лайк
+	EquipmentID      int     `gorm:"column:equipment_id;primaryKey;size:32"`
+	EquipmentName    string  `gorm:"column:equipment_name;type:varchar(150);not null"`
+	ShortDescription *string `gorm:"column:short_description;type:varchar(500)"`
+	EquipmentStatus  string  `gorm:"column:equipment_status;type:lighting_equipment_status;not null;default:'черновик'"`
+	ImageURL         *string `gorm:"column:image_url;type:varchar(255)"`
+	VideoURL         *string `gorm:"column:video_url;type:varchar(255)"`
+
+	// Поля по предметной области
+	PowerWatt    *float64 `gorm:"column:power_watt;type:numeric(6,2)"`
+	BeamAngleDeg *int     `gorm:"column:beam_angle_deg;type:integer"`
+
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp;not null;default:CURRENT_TIMESTAMP"`
+	// Дата формирования — проставляется при публикации
+	FormedAt *time.Time `gorm:"column:formed_at;type:timestamp"`
+
+	// Создатель. У проектировщика не более одного черновика — частичный уникальный индекс.
+	// Каскадное удаление запрещено: RESTRICT
+	CreatorID int          `gorm:"column:creator_id;size:32;not null;uniqueIndex:uq_draft_per_creator,where:equipment_status = 'черновик'"`
+	Creator   LightingUser `gorm:"foreignKey:CreatorID;references:UserID;constraint:OnUpdate:RESTRICT,OnDelete:RESTRICT"`
+}
+
+func (LightingEquipment) TableName() string {
+	return "lighting_equipment"
+}
+
+// LightingEquipmentWithLikes — светильник вместе с количеством лайков,
+// которое БД считает подзапросом к таблице связи м-м
+type LightingEquipmentWithLikes struct {
+	LightingEquipment
+	LikesTotal int64 `gorm:"column:likes_total"`
 }

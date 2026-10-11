@@ -39,5 +39,37 @@ services:
       exit 0
       "
 
+  # PostgreSQL: хранилище светильников, проектировщиков и лайков
+  postgres:
+    image: postgres:16-alpine
+    container_name: lighting-equipment-go-db
+    ports:
+      - '5455:5432' # 5432 и 5433 заняты другими проектами
+    environment:
+      POSTGRES_USER: lighting
+      POSTGRES_PASSWORD: lighting
+      POSTGRES_DB: lighting_equipment
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lighting -d lighting_equipment']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Adminer: веб-панель администратора БД, через неё наполняются таблицы
+  adminer:
+    image: adminer:latest
+    container_name: lighting-equipment-go-adminer
+    ports:
+      - '8081:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha
+
 volumes:
   minio-data:
+  postgres-data:

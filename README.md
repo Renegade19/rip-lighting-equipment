@@ -1,85 +1,151 @@
-# LumiCalc — Лабораторная работа №1 (Go)
+# LumiCalc — Лабораторные работы №1–2 (Go)
 
 Тема: **Расчёт освещённости помещения светодиодными лампами**.
 `Услуги` — модели светильников (мощность, световой поток, угол рассеивания).
 `Заявка` (в будущих лабораторных) — расчёт количества выбранных моделей светильников
 для достижения требуемой освещённости в помещении заданной площади.
 
-Стек: **Go + gin + html/template**, фото и видео — **Minio**
-(поднимается через `docker compose`). Базы данных в этой лабораторной нет.
+Стек: **Go + gin + html/template + PostgreSQL + gORM**,
+фото и видео — **Minio**, администрирование БД — **Adminer**
+(всё поднимается через `docker compose`).
+
+Ветки: `lighting-equipment-lab1` — ЛР1 (коллекция в памяти, три GET),
+`lighting-equipment-lab2` — ЛР2 (база данных, шесть HTTP-методов).
 
 ## Структура проекта
 
 ```
-cmd/lighting-equipment/main.go             # точка входа
-internal/api/server.go                     # сборка сервера: шаблоны, статика, маршруты
+cmd/lighting-equipment/main.go             # точка входа приложения
+cmd/migrate/main.go                        # создание таблиц (go run ./cmd/migrate)
+internal/api/server.go                     # сборка сервера: БД, шаблоны, статика, маршруты
 internal/app/
   config/config.go                         # настройки из .env, сборка url объектов Minio
-  ds/lighting_equipment.go                 # модель "Услуга" (светильник) и статусы
-  repository/repository.go                 # коллекция светильников с вложенными лайками
-  repository/lighting_equipment.go         # фильтр по мощности, лента, черновик
+  dsn/dsn.go                               # строка подключения к PostgreSQL
+  ds/                                      # модели: светильник, проектировщик, лайк
+  repository/repository.go                 # подключение к БД через gORM
+  repository/lighting_equipment.go         # запросы: 5 через ORM, удаление — SQL-курсор
   handler/handler.go                       # маршруты
-  handler/lighting_equipment.go            # три обработчика GET
+  handler/lighting_equipment.go            # шесть обработчиков
+  handler/current_lighting_user.go         # текущий проектировщик (константа)
+  handler/media.go                         # фото и видео по умолчанию
 templates/
   lighting-equipment-feed.html             # страница "Лента"
   lighting-equipment-draft.html            # страница "Добавление"
   lighting-equipment-tile.html             # страница "Плитка"
   lighting-equipment-tabbar.html           # нижняя панель вкладок
-resources/css/lighting-equipment.css       # единый файл стилей (палитра и формы — из Figma)
+resources/
+  css/lighting-equipment.css               # единый файл стилей (палитра и формы — из Figma)
+  images/default-equipment.svg             # изображение по умолчанию
+  videos/default-equipment.mp4             # видео по умолчанию
 assets/                                    # фото и видео для загрузки в Minio
-docker-compose.yml                         # Minio + создание бакета и загрузка assets/
+scripts/seed.sql                           # наполнение таблиц через Adminer
+docker-compose.yml                         # Minio, PostgreSQL, Adminer
 ```
 
-## Маршруты (три GET-страницы, без JavaScript)
+## Структура БД
 
-| Метод | URL | Назначение |
-|---|---|---|
-| GET | `/lighting-equipment?minPowerWatt=2&maxPowerWatt=5` | Плитка — опубликованные светильники с фильтром по диапазону мощности (Вт) |
-| GET | `/lighting-equipment/:equipment_id?next=true` | Лента — один светильник, при `next=true` — следующий опубликованный |
-| GET | `/lighting-equipment/draft` | Добавление — светильник в статусе "черновик" |
+Три таблицы, каскадное удаление запрещено (все внешние ключи `ON DELETE RESTRICT`).
+
+### `lighting_users` — проектировщики освещения
+
+| Столбец | Тип | Ключ | Описание |
+|---|---|---|---|
+| `user_id` | serial | PK | идентификатор |
+| `login` | varchar(50) | unique | логин |
+| `full_name` | varchar(100) | | ФИО |
+
+### `lighting_equipment` — услуги (модели светильников)
+
+| Столбец | Тип | Ключ | Описание |
+|---|---|---|---|
+| `equipment_id` | serial | PK | идентификатор |
+| `equipment_name` | varchar(150) | | наименование модели |
+| `short_description` | varchar(500) | | краткое описание |
+| `equipment_status` | enum | | черновик / опубликован / удалён |
+| `image_url` | varchar(255) | | url изображения в Minio |
+| `video_url` | varchar(255) | | url видео в Minio |
+| `power_watt` | numeric(6,2) | | **поле по теме:** мощность, Вт |
+| `beam_angle_deg` | integer | | **поле по теме:** угол рассеивания, ° |
+| `created_at` | timestamp | | дата создания |
+| `formed_at` | timestamp | | дата формирования (проставляется при публикации) |
+| `creator_id` | integer | FK → `lighting_users` | создатель |
+
+У проектировщика не более одного светильника в статусе «черновик» —
+частичный уникальный индекс `uq_draft_per_creator`.
+
+### `lighting_equipment_likes` — лайки, связь м-м
+
+| Столбец | Тип | Ключ | Описание |
+|---|---|---|---|
+| `like_id` | serial | PK | идентификатор |
+| `user_id` | integer | FK → `lighting_users` | кто поставил лайк |
+| `equipment_id` | integer | FK → `lighting_equipment` | какому светильнику |
+
+Пара `(user_id, equipment_id)` уникальна. Количество лайков нигде не хранится —
+оно считается подзапросом `COUNT(*)` на стороне БД.
+
+## HTTP-методы (всего шесть)
+
+| Метод | URL | Реализация | Назначение |
+|---|---|---|---|
+| GET | `/lighting-equipment?minPowerWatt=&maxPowerWatt=` | ORM | плитка: опубликованные + фильтр по диапазону мощности |
+| GET | `/lighting-equipment/:equipment_id?next=true` | ORM | лента: БД возвращает одну строку |
+| GET | `/lighting-equipment/draft` | ORM | черновик текущего проектировщика |
+| POST | `/lighting-equipment/draft` | ORM | кнопка «Далее» — создание черновика |
+| POST | `/lighting-equipment/publish` | ORM | кнопка «Опубликовать» — смена статуса + дата формирования |
+| POST | `/lighting-equipment/delete` | **SQL-курсор, без ORM** | логическое удаление с плитки |
 
 С панели вкладок лента открывается без id — по адресу `/lighting-equipment/feed`
 (тот же обработчик, показывает первый опубликованный светильник).
 
-Фильтр на странице "Плитка" — два независимых ползунка (нижняя и верхняя границы
+Фильтр на странице «Плитка» — два независимых ползунка (нижняя и верхняя границы
 мощности) и кнопка «Применить». Форма отправляется обычным GET, фильтрация
-выполняется на сервере в `Repository.GetPublishedLightingEquipment`. Выбранный
-диапазон подписан текстом над ползунками, потому что без JavaScript
-`input[type=range]` не может показать своё значение во время перетаскивания.
-Если нижняя граница уведена выше верхней, обработчик меняет их местами.
+выполняется в SQL (`power_watt BETWEEN ? AND ?`). Если нижняя граница уведена
+выше верхней, обработчик меняет их местами.
+
+Удаление: в одной транзакции объявляется курсор `DECLARE ... CURSOR FOR SELECT ... FOR UPDATE`,
+строка читается через `FETCH`, статус меняется запросом `UPDATE ... WHERE CURRENT OF`.
+Запись остаётся в таблице.
+
+Текущий проектировщик зафиксирован константой в
+`internal/app/handler/current_lighting_user.go` (авторизация появится в ЛР4).
+
+Файлы изображения и видео в этой лабораторной на сервер **не передаются**.
+По кнопке «Далее» в таблицу записываются адреса объектов Minio, которых там нет.
+Если поле url пустое либо файл по ссылке недоступен, подставляются
+`resources/images/default-equipment.svg` и `resources/videos/default-equipment.mp4`,
+лежащие вместе с иконками на SSR-сервере.
 
 ## Запуск
 
 1. Положить видео `smart-matter-classic-a.mp4` в папку `assets/`
    (в репозитории не хранится из-за размера; фото там уже лежат).
 
-2. Поднять Minio:
+2. Поднять Minio, PostgreSQL и Adminer:
    ```bash
    docker compose up -d
    ```
    Бакет `lighting-equipment` создаётся автоматически, открывается на чтение,
    в него загружаются все файлы из `assets/`.
    Веб-консоль Minio: http://localhost:9001 (логин/пароль: `minioadmin` / `minioadmin`).
+   Adminer: http://localhost:8081 (движок PostgreSQL, сервер `postgres`,
+   пользователь `lighting`, пароль `lighting`, база `lighting_equipment`).
 
 3. Скопировать `.env.example` в `.env`.
 
-4. Запустить приложение:
+4. Создать таблицы:
+   ```bash
+   go run ./cmd/migrate
+   ```
+
+5. Наполнить таблицы через Adminer — выполнить содержимое `scripts/seed.sql`
+   на вкладке «SQL-запрос».
+
+6. Запустить приложение:
    ```bash
    go run ./cmd/lighting-equipment
    ```
-   Открыть http://localhost:3000 — редирект на страницу "Плитка".
-
-## Данные (коллекция услуг)
-
-Хранится срезом в `internal/app/repository/repository.go`. У каждого светильника
-два поля по теме (`PowerWatt`, `BeamAngleDeg`), ключи изображения и видео в Minio
-(`ImageKey`, `VideoKey`) и вложенные лайки — id пользователей (`LikedUserIDs`).
-Количество лайков нигде не хранится, оно считается в обработчике.
-
-Статусы:
-- `опубликован` — отображается в ленте и плитке;
-- `черновик` — ровно одна запись, показывается на странице "Добавление";
-- `удалён` — не отображается ни на одной странице (доступ к ней = 404).
+   Открыть http://localhost:3000 — редирект на страницу «Плитка».
 
 ## Что переносилось из референса
 

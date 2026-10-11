@@ -9,23 +9,22 @@
 <body class="page page--feed">
   <div class="screen screen--feed">
     <div class="feed-media">
-      {{if .Equipment.VideoURL}}
-        <video class="feed-media__video" src="{{.Equipment.VideoURL}}" autoplay muted loop playsinline poster="{{.Equipment.ImageURL}}"></video>
-      {{else}}
-        <img class="feed-media__video" src="{{.Equipment.ImageURL}}" alt="{{.Equipment.EquipmentName}}" />
-      {{end}}
+      <!-- Если у светильника нет видео или файл недоступен, сюда приходит
+           адрес видео по умолчанию с SSR-сервера, то же самое с изображением -->
+      <video class="feed-media__video" src="{{.Equipment.VideoURL}}" autoplay muted loop playsinline poster="{{.Equipment.ImageURL}}"></video>
 
       <div class="feed-gradient"></div>
 
-      <!-- Правая колонка: два поля по теме, лайки и переход к следующему светильнику -->
+      <!-- Правая колонка: два поля по теме, лайки и переход к следующему светильнику.
+           Лайки в этой лабораторной только отображаются из БД -->
       <div class="feed-side">
         <div class="feed-spec">
-          <span class="feed-spec__value">{{.Equipment.PowerWatt}} Вт</span>
+          <span class="feed-spec__value">{{with .Equipment.PowerWatt}}{{.}}{{else}}—{{end}} Вт</span>
           <span class="feed-spec__caption">мощность</span>
         </div>
 
         <div class="feed-spec">
-          <span class="feed-spec__value">{{.Equipment.BeamAngleDeg}}°</span>
+          <span class="feed-spec__value">{{with .Equipment.BeamAngleDeg}}{{.}}{{else}}—{{end}}°</span>
           <span class="feed-spec__caption">угол</span>
         </div>
 
@@ -45,7 +44,7 @@
       <div class="feed-info">
         <h1 class="feed-info__title">{{.Equipment.EquipmentName}}</h1>
         <input class="feed-more__toggle" type="checkbox" id="more" />
-        <p class="feed-info__description">{{.Equipment.ShortDescription}}</p>
+        <p class="feed-info__description">{{with .Equipment.ShortDescription}}{{.}}{{end}}</p>
         <label class="feed-more__label" for="more">
           <span class="feed-more__open">Ещё</span>
           <span class="feed-more__close">Свернуть</span>
