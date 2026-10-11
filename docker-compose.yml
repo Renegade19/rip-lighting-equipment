@@ -1,0 +1,43 @@
+name: lighting-equipment-go
+
+services:
+  # Minio: S3-хранилище фото и видео светильников
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: lighting-equipment-go-minio
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # веб-консоль
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Одноразовый контейнер: создаёт бакет "lighting-equipment", открывает его
+  # на чтение и загружает в него файлы из папки assets/
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: lighting-equipment-go-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./assets:/assets:ro
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb -p local/lighting-equipment &&
+      mc anonymous set download local/lighting-equipment &&
+      mc cp --recursive /assets/ local/lighting-equipment/ &&
+      exit 0
+      "
+
+volumes:
+  minio-data:

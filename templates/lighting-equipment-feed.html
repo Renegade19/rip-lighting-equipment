@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>{{.Title}} — LumiCalc</title>
+  <link rel="stylesheet" href="/css/lighting-equipment.css" />
+</head>
+<body class="page page--feed">
+  <div class="screen screen--feed">
+    <div class="feed-media">
+      {{if .Equipment.VideoURL}}
+        <video class="feed-media__video" src="{{.Equipment.VideoURL}}" autoplay muted loop playsinline poster="{{.Equipment.ImageURL}}"></video>
+      {{else}}
+        <img class="feed-media__video" src="{{.Equipment.ImageURL}}" alt="{{.Equipment.EquipmentName}}" />
+      {{end}}
+
+      <div class="feed-gradient"></div>
+
+      <!-- Правая колонка: два поля по теме, лайки и переход к следующему светильнику -->
+      <div class="feed-side">
+        <div class="feed-spec">
+          <span class="feed-spec__value">{{.Equipment.PowerWatt}} Вт</span>
+          <span class="feed-spec__caption">мощность</span>
+        </div>
+
+        <div class="feed-spec">
+          <span class="feed-spec__value">{{.Equipment.BeamAngleDeg}}°</span>
+          <span class="feed-spec__caption">угол</span>
+        </div>
+
+        <div class="feed-like">
+          <svg viewBox="0 0 31 29" class="feed-like__icon" fill="none"><path d="M16.2226 23.9167C16.2226 23.9167 7.47263 18.55 4.55596 13.1833C2.92263 9.45 4.55596 5.25 8.63929 4.2C10.9726 3.61667 13.306 4.55 14.4726 6.53333C15.6393 4.55 17.9726 3.61667 20.306 4.2C24.3893 5.25 26.0226 9.45 24.3893 13.1833C21.4726 18.55 12.7226 23.9167 12.7226 23.9167H16.2226Z" stroke="#F66300" stroke-width="1.87" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="feed-like__count">{{.Equipment.LikesTotal}}</span>
+        </div>
+
+        <a class="feed-next" href="/lighting-equipment/{{.Equipment.EquipmentID}}?next=true" aria-label="Следующий светильник">
+          <svg viewBox="0 0 24 24" class="feed-next__icon"><path d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+          <span class="feed-next__label">Следующий</span>
+        </a>
+      </div>
+
+      <!-- Описание внизу слева: 2 строки, раскрывается по "Ещё" без JavaScript
+           (чекбокс-хак: :checked меняет стили соседних элементов) -->
+      <div class="feed-info">
+        <h1 class="feed-info__title">{{.Equipment.EquipmentName}}</h1>
+        <input class="feed-more__toggle" type="checkbox" id="more" />
+        <p class="feed-info__description">{{.Equipment.ShortDescription}}</p>
+        <label class="feed-more__label" for="more">
+          <span class="feed-more__open">Ещё</span>
+          <span class="feed-more__close">Свернуть</span>
+        </label>
+      </div>
+    </div>
+
+    {{template "lighting-equipment-tabbar" .}}
+  </div>
+</body>
+</html>

@@ -1,0 +1,557 @@
+/*
+  Вёрстка (расположение блоков) — из макета Figma:
+  https://www.figma.com/design/4K5rICTM65jP6Hur1rlF0E/Untitled?node-id=2-6
+
+  Цвета — из официальной палитры LEDVANCE (снято из production CSS-бандла
+  www.ledvance.com, переменные --primary-1-orange-* и --primary-2-black-*):
+  https://www.ledvance.com/en-int/home-lighting/products/smart-home/smart-lamps/
+  smart-matter/smart-matter-filament-lamps-with-matter-technology/
+  smart-matter-classic-filament-lamps-with-wifi-technology-c382269?productId=362211
+*/
+
+:root {
+  --color-accent: #f66300; /* --primary-1-orange-500 */
+  --color-accent-dark: #cc4902; /* --primary-1-orange-600 */
+  --color-text: #201f27; /* --primary-2-black-800 */
+  --color-text-muted: #909098; /* --primary-2-black-400 */
+  --color-white: #ffffff;
+  --color-card-bg: #e3e3e5; /* --primary-2-black-200 */
+  --color-border: #e3e3e5; /* --primary-2-black-200 */
+  --color-input-border: #bfbfc4; /* --primary-2-black-300 */
+  --color-feed-bg: #201f27; /* --primary-2-black-800 */
+  --color-tabbar-bg: #f5f5f5;
+  --color-tabbar-border: #e3e3e5; /* --primary-2-black-200 */
+  --radius-card: 8px;
+  --radius-input: 6px;
+  --font-main: 'Helvetica Neue', Helvetica, Arial, sans-serif; /* шрифтовой стек ledvance.com */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-main);
+  background: var(--color-white);
+  color: var(--color-text);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.screen {
+  max-width: 420px;
+  margin: 0 auto;
+  /* экран телефона: ровно одна высота вьюпорта, прокручивается только
+     содержимое, панель вкладок всегда закреплена снизу */
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+/* ---------- Bottom navigation ---------- */
+
+.lighting-equipment-tabbar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 14px 12px 20px;
+  background: #f5f5f5;
+  border-top: 1px solid #d5d5d5;
+}
+
+.screen--feed .lighting-equipment-tabbar {
+  background: var(--color-feed-bg);
+  border-top: none;
+}
+
+.lighting-equipment-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.screen--feed .lighting-equipment-tabbar__item {
+  color: #8a8a8a;
+}
+
+.lighting-equipment-tabbar__item--active {
+  color: var(--color-accent);
+}
+
+.lighting-equipment-tabbar__icon {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+/* ---------- Feed page (лента) ---------- */
+
+.screen--feed {
+  background: var(--color-feed-bg);
+}
+
+.feed-media {
+  position: relative;
+  flex: 1;
+  background: var(--color-white);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 130px;
+  /* min-height:0 снимает автоматический "пол" flex-элемента по высоте
+     видео — иначе лента растягивается и таб-бар уходит за край экрана */
+  min-height: 0;
+}
+
+.feed-media__video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: var(--color-white);
+  display: block;
+}
+
+.feed-gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38%;
+  background: linear-gradient(to bottom, rgba(32, 31, 39, 0) 0%, var(--color-feed-bg) 92%);
+  pointer-events: none;
+}
+
+/* Правая колонка ленты: обе иконки */
+.feed-side {
+  position: absolute;
+  right: 12px;
+  bottom: 24px;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  z-index: 2;
+}
+
+.feed-like {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.feed-like__icon {
+  width: 30px;
+  height: 30px;
+}
+
+.feed-like__count {
+  color: var(--color-accent);
+  font-size: 15px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.feed-next {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.feed-next__icon {
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  fill: var(--color-white);
+}
+
+.feed-next__label {
+  font-size: 11px;
+  color: #dddddd;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+/* Описание внизу слева */
+.feed-info {
+  position: absolute;
+  left: 16px;
+  right: 88px;
+  bottom: 18px;
+  color: var(--color-white);
+  z-index: 2;
+}
+
+.feed-info__title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.feed-info__description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+  color: #dddddd;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; /* короткое описание — ровно 2 строки */
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Раскрытие описания без JavaScript: скрытый чекбокс управляет
+   соседними элементами через селектор :checked ~ */
+.feed-more__toggle {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.feed-more__toggle:checked ~ .feed-info__description {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+
+.feed-more__label {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.feed-more__close {
+  display: none;
+}
+
+.feed-more__toggle:checked ~ .feed-more__label .feed-more__open {
+  display: none;
+}
+
+.feed-more__toggle:checked ~ .feed-more__label .feed-more__close {
+  display: inline;
+}
+
+.btn {
+  display: inline-block;
+  border: none;
+  border-radius: var(--radius-input);
+  padding: 15px 20px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+/* ---------- Draft page (добавление) ---------- */
+
+.draft-form {
+  padding: 20px 20px 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Блоки изображения и видео — друг под другом, каждый со своим выбором файла */
+.draft-media {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.draft-media__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.draft-media__box {
+  border: 1.5px dashed var(--color-accent);
+  border-radius: var(--radius-card);
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.draft-media__box img,
+.draft-media__box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.draft-media__icon {
+  width: 28px;
+  height: 28px;
+}
+
+.draft-media__hint {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.draft-media__file {
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text-muted);
+}
+
+.draft-media__file::file-selector-button {
+  margin-right: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-input);
+  background: var(--color-white);
+  color: var(--color-accent);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.draft-media__file::file-selector-button:hover {
+  background: var(--color-accent);
+  color: var(--color-white);
+}
+
+.draft-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.draft-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.draft-form__label {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.draft-form__input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-input);
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--color-text);
+}
+
+.draft-form__input--area {
+  height: auto;
+  padding: 12px 16px;
+  line-height: 1.35;
+  resize: vertical;
+}
+
+.draft-form__fields {
+  padding-bottom: 24px;
+}
+
+.draft-form__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.btn--primary {
+  background: var(--color-accent);
+  color: var(--color-white);
+  width: 100%;
+  height: 52px;
+  margin: 24px 0;
+}
+
+.btn--primary:hover {
+  background: var(--color-accent-dark);
+}
+
+/* ---------- Tile page (плитка) ---------- */
+
+.tile-content {
+  padding: 20px 20px 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Фильтр по мощности с двумя ползунками */
+.power-filter {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 14px 16px 16px;
+  margin-bottom: 16px;
+}
+
+.power-filter__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.power-filter__title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.power-filter__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.power-filter__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.power-filter__caption {
+  width: 22px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.power-filter__slider {
+  flex: 1;
+  accent-color: var(--color-accent);
+  height: 24px;
+}
+
+.power-filter__scale {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 32px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.power-filter__submit {
+  height: 44px;
+  margin: 14px 0 0;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: min-content;
+  align-content: start;
+  gap: 16px;
+  flex: 1;
+  padding-bottom: 20px;
+}
+
+.tile-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.tile-card__image {
+  background: var(--color-card-bg);
+  aspect-ratio: 173 / 140;
+}
+
+.tile-card__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.tile-card__name {
+  padding: 12px 12px 0;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--color-text);
+}
+
+.tile-card__likes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  font-size: 16px;
+  color: var(--color-accent);
+}
+
+.tile-card__likes-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.tile-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: 40px 0;
+}
+
+/* Поля по теме в правой колонке ленты: мощность и угол рассеивания */
+.feed-spec {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: var(--radius-card);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.feed-spec__value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-white);
+}
+
+.feed-spec__caption {
+  font-size: 11px;
+  color: #dddddd;
+}
+
+/* Мощность на карточке плитки — поле, по которому работает фильтр */
+.tile-card__power {
+  padding: 6px 12px 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
