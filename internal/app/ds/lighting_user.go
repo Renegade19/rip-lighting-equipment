@@ -5,6 +5,8 @@ type LightingUser struct {
 	UserID   int    `gorm:"column:user_id;primaryKey;size:32"`
 	Login    string `gorm:"column:login;type:varchar(50);not null;uniqueIndex:uq_lighting_user_login"`
 	FullName string `gorm:"column:full_name;type:varchar(100);not null"`
+	// Хэш пароля (bcrypt). Сам пароль не хранится, хэш клиенту не передаётся
+	PasswordHash string `gorm:"column:password_hash;type:varchar(60);not null;default:''"`
 }
 
 func (LightingUser) TableName() string {

@@ -2,213 +2,302 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"lighting-equipment/internal/app/ds"
 	"lighting-equipment/internal/app/repository"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
-// Границы шкалы фильтра мощности (Вт) для двойного слайдера на плитке
-const (
-	PowerScaleMin = 0.0
-	PowerScaleMax = 10.0
+var (
+	errInvalidEquipmentID = errors.New("ид светильника должен быть положительным целым числом")
+	errInvalidJSON        = errors.New("тело запроса должно быть корректным JSON")
 )
 
-var errLightingEquipmentNotFound = errors.New("Светильник не найден")
-
-// lightingEquipmentCard — светильник в том виде, в котором он уходит в шаблон:
-// вместо пустых и нерабочих url подставлены фото и видео по умолчанию
-type lightingEquipmentCard struct {
-	ds.LightingEquipment
-	LikesTotal int64
-	ImageURL   string
-	VideoURL   string
-	// В ленте у светильника без своего видео показывается его фото.
-	// Видео по умолчанию остаётся, только когда нет ни видео, ни фото
-	PhotoInsteadOfVideo bool
-}
-
-func toCard(equipment ds.LightingEquipment, likesTotal int64) lightingEquipmentCard {
-	imageURL := resolveImageURL(equipment.ImageURL)
-	videoURL := resolveVideoURL(equipment.VideoURL)
-	return lightingEquipmentCard{
-		LightingEquipment:   equipment,
-		LikesTotal:          likesTotal,
-		ImageURL:            imageURL,
-		VideoURL:            videoURL,
-		PhotoInsteadOfVideo: videoURL == DefaultVideoURL && imageURL != DefaultImageURL,
+// Ид светильника из адреса запроса
+func parseEquipmentID(ctx *gin.Context) (int, error) {
+	equipmentID, err := strconv.Atoi(ctx.Param("equipment_id"))
+	if err != nil || equipmentID <= 0 {
+		return 0, errInvalidEquipmentID
 	}
+	return equipmentID, nil
 }
 
-// Значение ползунка; если параметра нет или он не число — берём край шкалы
-func parsePowerWatt(raw string, fallback float64) float64 {
+// Необязательная граница фильтра мощности: если параметра нет, возвращается nil
+func parsePowerWatt(ctx *gin.Context, name string) (*float64, error) {
+	raw := strings.TrimSpace(ctx.Query(name))
+	if raw == "" {
+		return nil, nil
+	}
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-		return fallback
+		return nil, fmt.Errorf("параметр %s должен быть числом", name)
 	}
-	return value
+	return &value, nil
 }
 
-// GetLightingEquipmentTile — страница "Плитка":
-// опубликованные светильники + фильтр по диапазону мощности (Вт)
-func (h *Handler) GetLightingEquipmentTile(ctx *gin.Context) {
-	minPowerWatt := parsePowerWatt(ctx.Query("minPowerWatt"), PowerScaleMin)
-	maxPowerWatt := parsePowerWatt(ctx.Query("maxPowerWatt"), PowerScaleMax)
-	// Ползунки независимы, поэтому нижнюю границу можно увести выше верхней —
-	// в этом случае меняем границы местами, чтобы диапазон остался осмысленным
-	if minPowerWatt > maxPowerWatt {
+// GetLightingEquipmentList — GET списка: опубликованные светильники
+// с фильтром по диапазону мощности (Вт). У каждого — признак 0/1,
+// создан ли он текущим проектировщиком
+func (h *Handler) GetLightingEquipmentList(ctx *gin.Context) {
+	minPowerWatt, err := parsePowerWatt(ctx, "minPowerWatt")
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+	maxPowerWatt, err := parsePowerWatt(ctx, "maxPowerWatt")
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+	// Ползунки фильтра независимы, нижнюю границу можно увести выше верхней —
+	// в этом случае границы меняются местами
+	if minPowerWatt != nil && maxPowerWatt != nil && *minPowerWatt > *maxPowerWatt {
 		minPowerWatt, maxPowerWatt = maxPowerWatt, minPowerWatt
 	}
 
-	lightingEquipment, err := h.Repository.GetPublishedLightingEquipment(minPowerWatt, maxPowerWatt)
+	lightingEquipment, err := h.Repository.GetPublishedLightingEquipment(getCurrentLightingUserID(), minPowerWatt, maxPowerWatt)
 	if err != nil {
-		log.Error(err)
-		h.errorHandler(ctx, http.StatusInternalServerError, err)
+		h.repositoryErrorHandler(ctx, err)
 		return
 	}
-	cards := make([]lightingEquipmentCard, 0, len(lightingEquipment))
+
+	tiles := make([]ds.LightingEquipmentTileSerializer, 0, len(lightingEquipment))
 	for _, equipment := range lightingEquipment {
-		cards = append(cards, toCard(equipment.LightingEquipment, equipment.LikesTotal))
+		tiles = append(tiles, ds.NewLightingEquipmentTileSerializer(equipment))
 	}
-
-	ctx.HTML(http.StatusOK, "lighting-equipment-tile.html", gin.H{
-		"Title":     "Плитка светильников",
-		"ActiveTab": "tile",
-		// Значения возвращаются в шаблон, чтобы поля фильтра сохранялись после запроса
-		"MinPowerWatt":      minPowerWatt,
-		"MaxPowerWatt":      maxPowerWatt,
-		"PowerScaleMin":     PowerScaleMin,
-		"PowerScaleMax":     PowerScaleMax,
-		"LightingEquipment": cards,
-	})
+	ctx.JSON(http.StatusOK, tiles)
 }
 
-// GetLightingEquipmentDraft — страница "Добавление".
-// Черновик у проектировщика не более одного; если его нет,
-// страница открывается пустой с кнопкой "Далее"
-func (h *Handler) GetLightingEquipmentDraft(ctx *gin.Context) {
-	data := gin.H{
-		"Title":           "Добавление светильника",
-		"ActiveTab":       "draft",
-		"DefaultImageURL": DefaultImageURL,
-		"DefaultVideoURL": DefaultVideoURL,
-	}
-
-	draft, err := h.Repository.GetDraftLightingEquipment(getCurrentLightingUserID())
-	switch {
-	case err == nil:
-		data["Draft"] = toCard(*draft, 0)
-	case !errors.Is(err, gorm.ErrRecordNotFound):
-		log.Error(err)
-		h.errorHandler(ctx, http.StatusInternalServerError, err)
-		return
-	}
-
-	ctx.HTML(http.StatusOK, "lighting-equipment-draft.html", data)
-}
-
-// GetLightingEquipmentFeed — страница "Лента": один светильник.
-// Без id открывается первый опубликованный, с ?next=true — следующий после id.
-// Удалённые светильники и черновики в ленте не открываются
+// GetLightingEquipmentFeed — GET ленты: один опубликованный светильник
+// с признаком 0/1, лайкнул ли его текущий проектировщик.
+// Без ид отдаётся первый, с ?next=true — следующий после указанного ид
 func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 	equipmentID := 0
 	next := ctx.Query("next") == "true"
 
-	if raw := ctx.Param("equipment_id"); raw != "" {
-		id, err := strconv.Atoi(raw)
-		if err != nil || id <= 0 {
-			h.errorHandler(ctx, http.StatusNotFound, errLightingEquipmentNotFound)
+	if ctx.Param("equipment_id") != "" {
+		id, err := parseEquipmentID(ctx)
+		if err != nil {
+			h.errorHandler(ctx, http.StatusBadRequest, err)
 			return
 		}
 		equipmentID = id
 	} else {
-		// Лента без id: следующий после нуля — первый опубликованный
+		// Лента без ид: следующий после нуля — первый опубликованный
 		next = true
 	}
 
-	equipment, err := h.Repository.GetLightingEquipmentForFeed(equipmentID, next)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		h.errorHandler(ctx, http.StatusNotFound, errLightingEquipmentNotFound)
+	equipment, err := h.Repository.GetLightingEquipmentForFeed(getCurrentLightingUserID(), equipmentID, next)
+	if err != nil {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentFeedSerializer(*equipment))
+}
+
+// GetLightingEquipmentDraft — GET черновика текущего проектировщика.
+// Ид не указывается: черновик у проектировщика не более одного
+func (h *Handler) GetLightingEquipmentDraft(ctx *gin.Context) {
+	draft, err := h.Repository.GetDraftLightingEquipment(getCurrentLightingUserID())
+	if errors.Is(err, repository.ErrLightingEquipmentNotFound) {
+		h.errorHandler(ctx, http.StatusNotFound, errors.New("у проектировщика нет светильника в статусе «черновик»"))
 		return
 	}
 	if err != nil {
-		log.Error(err)
-		h.errorHandler(ctx, http.StatusInternalServerError, err)
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*draft))
+}
+
+// CreateLightingEquipment — POST добавления: название и два файла (multipart/form-data).
+// Файлы сохраняются в Minio под сгенерированными именами на латинице,
+// в БД записываются адреса этих файлов. Светильник создаётся в статусе "черновик"
+func (h *Handler) CreateLightingEquipment(ctx *gin.Context) {
+	currentUserID := getCurrentLightingUserID()
+
+	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxCreateRequestBytes)
+	if err := ctx.Request.ParseMultipartForm(8 << 20); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			h.errorHandler(ctx, http.StatusRequestEntityTooLarge, errors.New("запрос слишком большой"))
+			return
+		}
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("ожидается форма multipart/form-data с полями equipmentName, equipmentImage, equipmentVideo"))
 		return
 	}
 
-	ctx.HTML(http.StatusOK, "lighting-equipment-feed.html", gin.H{
-		"Title":     equipment.EquipmentName,
-		"ActiveTab": "feed",
-		"Equipment": toCard(equipment.LightingEquipment, equipment.LikesTotal),
-	})
-}
-
-// CreateLightingEquipmentDraft — POST кнопки "Далее": создание черновика через ORM.
-// Форма отправляется без multipart, поэтому сами файлы на сервер не приходят —
-// приходят только их имена. В таблицу записываются адреса объектов Minio,
-// которых там нет, поэтому на страницах показываются фото и видео по умолчанию
-func (h *Handler) CreateLightingEquipmentDraft(ctx *gin.Context) {
 	equipmentName := strings.TrimSpace(ctx.PostForm("equipmentName"))
-	if equipmentName != "" {
-		imageURL := h.Config.ImageURL(generateMediaKey("image", ctx.PostForm("imageFile"), ".jpg"))
-		videoURL := h.Config.VideoURL(generateMediaKey("video", ctx.PostForm("videoFile"), ".mp4"))
-
-		err := h.Repository.CreateDraftLightingEquipment(getCurrentLightingUserID(), equipmentName, imageURL, videoURL)
-		if err != nil && !errors.Is(err, repository.ErrDraftAlreadyExists) {
-			log.Error(err)
-			h.errorHandler(ctx, http.StatusInternalServerError, err)
-			return
-		}
-	}
-	ctx.Redirect(http.StatusFound, "/lighting-equipment/draft")
-}
-
-// PublishLightingEquipmentDraft — POST кнопки "Опубликовать":
-// описание и оба поля по теме обязательны, статус меняется через ORM
-func (h *Handler) PublishLightingEquipmentDraft(ctx *gin.Context) {
-	shortDescription := strings.TrimSpace(ctx.PostForm("shortDescription"))
-	powerWatt, powerErr := strconv.ParseFloat(ctx.PostForm("powerWatt"), 64)
-	beamAngleDeg, angleErr := strconv.Atoi(ctx.PostForm("beamAngleDeg"))
-
-	// Поля заполнены неверно — возвращаемся на страницу добавления, черновик не меняется
-	if shortDescription == "" || len([]rune(shortDescription)) > 500 ||
-		powerErr != nil || math.IsNaN(powerWatt) || powerWatt <= 0 || powerWatt > 9999.99 ||
-		angleErr != nil || beamAngleDeg <= 0 || beamAngleDeg > 360 {
-		ctx.Redirect(http.StatusFound, "/lighting-equipment/draft")
+	if equipmentName == "" || utf8.RuneCountInString(equipmentName) > 150 {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("equipmentName: укажите наименование светильника, не длиннее 150 символов"))
 		return
 	}
 
-	err := h.Repository.PublishDraftLightingEquipment(getCurrentLightingUserID(), shortDescription, powerWatt, beamAngleDeg)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		ctx.Redirect(http.StatusFound, "/lighting-equipment/draft")
-		return
-	}
+	imageHeader, err := ctx.FormFile("equipmentImage")
 	if err != nil {
-		log.Error(err)
-		h.errorHandler(ctx, http.StatusInternalServerError, err)
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("equipmentImage: приложите файл изображения"))
 		return
 	}
-	ctx.Redirect(http.StatusFound, "/lighting-equipment")
+	videoHeader, err := ctx.FormFile("equipmentVideo")
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("equipmentVideo: приложите файл видео"))
+		return
+	}
+
+	image, err := validateLightingEquipmentMedia(imageHeader, "image", "equipmentImage", equipmentImageTypes, maxEquipmentImageBytes)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+	video, err := validateLightingEquipmentMedia(videoHeader, "video", "equipmentVideo", equipmentVideoTypes, maxEquipmentVideoBytes)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	// Черновик у проектировщика один. Проверяем заранее, чтобы не загружать файлы зря
+	_, err = h.Repository.GetDraftLightingEquipment(currentUserID)
+	if err == nil {
+		h.repositoryErrorHandler(ctx, repository.ErrDraftAlreadyExists)
+		return
+	}
+	if !errors.Is(err, repository.ErrLightingEquipmentNotFound) {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+
+	requestCtx := ctx.Request.Context()
+	if err = h.uploadLightingEquipmentMedia(requestCtx, image); err != nil {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	if err = h.uploadLightingEquipmentMedia(requestCtx, video); err != nil {
+		h.removeLightingEquipmentMedia(ctx, image)
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+
+	draft, err := h.Repository.CreateDraftLightingEquipment(
+		currentUserID,
+		equipmentName,
+		h.Config.ImageURL(image.fileName),
+		h.Config.VideoURL(video.fileName),
+	)
+	if err != nil {
+		// Запись в БД не создана — загруженные файлы больше не нужны
+		h.removeLightingEquipmentMedia(ctx, image, video)
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+
+	ctx.Header("Location", fmt.Sprintf("/api/lighting-equipment/%d", draft.EquipmentID))
+	ctx.JSON(http.StatusCreated, ds.NewLightingEquipmentSerializer(*draft))
 }
 
-// DeleteLightingEquipment — POST логического удаления с плитки:
-// статус меняется на "удалён" сырым SQL, без ORM
-func (h *Handler) DeleteLightingEquipment(ctx *gin.Context) {
-	equipmentID, err := strconv.Atoi(ctx.PostForm("equipmentId"))
-	if err == nil {
-		if err = h.Repository.DeleteLightingEquipment(equipmentID); err != nil {
-			log.Error(err)
-			h.errorHandler(ctx, http.StatusInternalServerError, err)
-			return
+// Удаляет из Minio файлы, для которых не получилось создать запись в БД
+func (h *Handler) removeLightingEquipmentMedia(ctx *gin.Context, files ...*lightingEquipmentMedia) {
+	for _, file := range files {
+		if err := h.Repository.RemoveLightingEquipmentMedia(ctx.Request.Context(), file.fileName); err != nil {
+			log.Warnf("не удалось удалить файл %s из Minio: %v", file.fileName, err)
 		}
 	}
-	ctx.Redirect(http.StatusFound, "/lighting-equipment")
+}
+
+// PublishLightingEquipment — PUT публикации: описание и оба поля по теме обязательны.
+// Статус и дату формирования клиент не присылает — их проставляет сервер
+func (h *Handler) PublishLightingEquipment(ctx *gin.Context) {
+	equipmentID, err := parseEquipmentID(ctx)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	var request ds.PublishLightingEquipmentSerializer
+	if err = ctx.ShouldBindJSON(&request); err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, errInvalidJSON)
+		return
+	}
+
+	shortDescription := ""
+	if request.ShortDescription != nil {
+		shortDescription = strings.TrimSpace(*request.ShortDescription)
+	}
+	if shortDescription == "" || utf8.RuneCountInString(shortDescription) > 500 {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("shortDescription: укажите краткое описание, не длиннее 500 символов"))
+		return
+	}
+	if request.PowerWatt == nil || *request.PowerWatt <= 0 || *request.PowerWatt > 9999.99 {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("powerWatt: укажите мощность в ваттах, больше 0 и не больше 9999.99"))
+		return
+	}
+	if request.BeamAngleDeg == nil || *request.BeamAngleDeg <= 0 || *request.BeamAngleDeg > 360 {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("beamAngleDeg: укажите угол рассеивания в градусах, от 1 до 360"))
+		return
+	}
+	// В таблице мощность хранится с двумя знаками после запятой
+	powerWatt := math.Round(*request.PowerWatt*100) / 100
+
+	equipment, err := h.Repository.PublishLightingEquipment(
+		getCurrentLightingUserID(), equipmentID, shortDescription, powerWatt, *request.BeamAngleDeg,
+	)
+	if err != nil {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*equipment))
+}
+
+// DeleteLightingEquipment — DELETE: логическое удаление своего светильника.
+// Запись остаётся в таблице, статус меняется на "удалён"
+func (h *Handler) DeleteLightingEquipment(ctx *gin.Context) {
+	equipmentID, err := parseEquipmentID(ctx)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	if err = h.Repository.DeleteLightingEquipment(getCurrentLightingUserID(), equipmentID); err != nil {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+// SetLightingEquipmentLike — POST лайка от текущего проектировщика:
+// поле equipmentLike = 1 ставит лайк, 0 отменяет
+func (h *Handler) SetLightingEquipmentLike(ctx *gin.Context) {
+	equipmentID, err := parseEquipmentID(ctx)
+	if err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	var request ds.SetLightingEquipmentLikeSerializer
+	if err = ctx.ShouldBindJSON(&request); err != nil {
+		h.errorHandler(ctx, http.StatusBadRequest, errInvalidJSON)
+		return
+	}
+	if request.EquipmentLike == nil || (*request.EquipmentLike != 0 && *request.EquipmentLike != 1) {
+		h.errorHandler(ctx, http.StatusBadRequest, errors.New("equipmentLike: укажите 1, чтобы поставить лайк, или 0, чтобы отменить"))
+		return
+	}
+
+	likesTotal, err := h.Repository.SetLightingEquipmentLike(getCurrentLightingUserID(), equipmentID, *request.EquipmentLike == 1)
+	if err != nil {
+		h.repositoryErrorHandler(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, ds.LightingEquipmentLikesSerializer{
+		EquipmentID:          equipmentID,
+		LikesTotal:           likesTotal,
+		IsLikedByCurrentUser: *request.EquipmentLike,
+	})
 }

@@ -1,12 +1,17 @@
--- Наполнение таблиц лабораторной №2. Выполняется через Adminer (http://localhost:8081)
+-- Наполнение таблиц лабораторной №3. Выполняется через Adminer (http://localhost:8081)
 -- после создания таблиц командой go run ./cmd/migrate
 
-INSERT INTO lighting_users (login, full_name) VALUES
-  ('a.parahnevich', 'Парахневич А.'),
-  ('i.svetov',      'Светов И. В.'),
-  ('m.lampova',     'Лампова М. С.'),
-  ('d.luxov',       'Люксов Д. А.');
+-- Пароль у всех четырёх учебных проектировщиков один: lumicalc-demo.
+-- В таблице хранится только его хэш bcrypt
+INSERT INTO lighting_users (login, full_name, password_hash) VALUES
+  ('a.parahnevich', 'Парахневич А.', '$2a$10$nvegcA.R9Z6bxVTJVtFsEOLIFz/18TvnwY4SvPc9AgeHosifdF0oG'),
+  ('i.svetov',      'Светов И. В.',  '$2a$10$nvegcA.R9Z6bxVTJVtFsEOLIFz/18TvnwY4SvPc9AgeHosifdF0oG'),
+  ('m.lampova',     'Лампова М. С.', '$2a$10$nvegcA.R9Z6bxVTJVtFsEOLIFz/18TvnwY4SvPc9AgeHosifdF0oG'),
+  ('d.luxov',       'Люксов Д. А.',  '$2a$10$nvegcA.R9Z6bxVTJVtFsEOLIFz/18TvnwY4SvPc9AgeHosifdF0oG');
 
+-- Три обязательных статуса: опубликован, удалён, черновик.
+-- Черновик принадлежит проектировщику №2, поэтому текущий проектировщик (№1)
+-- может добавить свой светильник: черновик у каждого не более одного
 INSERT INTO lighting_equipment
   (equipment_name, short_description, equipment_status, image_url, video_url, power_watt, beam_angle_deg, created_at, formed_at, creator_id) VALUES
   ('SMART+ MATTER Filament Multicolor Classic Edison 40 4.8W E27',
@@ -48,7 +53,7 @@ INSERT INTO lighting_equipment
    NULL,
    'черновик',
    NULL, NULL,
-   NULL, NULL, '2026-03-01 08:20:00', NULL, 1);
+   NULL, NULL, '2026-03-01 08:20:00', NULL, 2);
 
 -- Лайки: связь м-м, один пользователь может лайкнуть несколько светильников
 INSERT INTO lighting_equipment_likes (user_id, equipment_id) VALUES

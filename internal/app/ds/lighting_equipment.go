@@ -37,9 +37,14 @@ func (LightingEquipment) TableName() string {
 	return "lighting_equipment"
 }
 
-// LightingEquipmentWithLikes — светильник вместе с количеством лайков,
-// которое БД считает подзапросом к таблице связи м-м
+// LightingEquipmentWithLikes — светильник вместе с вычисляемыми полями.
+// Их считает БД в том же запросе: количество лайков — подзапросом
+// к таблице связи м-м, признаки 0/1 — относительно текущего проектировщика
 type LightingEquipmentWithLikes struct {
 	LightingEquipment
 	LikesTotal int64 `gorm:"column:likes_total"`
+	// 1 — светильник создан текущим проектировщиком
+	IsCreatedByCurrentUser int `gorm:"column:is_created_by_current_user"`
+	// 1 — текущий проектировщик поставил этому светильнику лайк
+	IsLikedByCurrentUser int `gorm:"column:is_liked_by_current_user"`
 }

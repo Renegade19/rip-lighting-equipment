@@ -11,10 +11,12 @@ import (
 type Config struct {
 	ServicePort string
 
-	MinioEndpoint string
-	MinioPort     string
-	MinioUseSSL   bool
-	MinioBucket   string
+	MinioEndpoint  string
+	MinioPort      string
+	MinioUseSSL    bool
+	MinioBucket    string
+	MinioAccessKey string
+	MinioSecretKey string
 }
 
 func New() *Config {
@@ -22,12 +24,19 @@ func New() *Config {
 	_ = godotenv.Load()
 
 	return &Config{
-		ServicePort:   env("PORT", "3000"),
-		MinioEndpoint: env("MINIO_ENDPOINT", "localhost"),
-		MinioPort:     env("MINIO_PORT", "9000"),
-		MinioUseSSL:   env("MINIO_USE_SSL", "false") == "true",
-		MinioBucket:   env("MINIO_BUCKET", "lighting-equipment"),
+		ServicePort:    env("PORT", "3000"),
+		MinioEndpoint:  env("MINIO_ENDPOINT", "localhost"),
+		MinioPort:      env("MINIO_PORT", "9000"),
+		MinioUseSSL:    env("MINIO_USE_SSL", "false") == "true",
+		MinioBucket:    env("MINIO_BUCKET", "lighting-equipment"),
+		MinioAccessKey: env("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey: env("MINIO_SECRET_KEY", "minioadmin"),
 	}
+}
+
+// MinioAddress — адрес S3 API Minio в виде host:port, по нему сервис загружает файлы
+func (c *Config) MinioAddress() string {
+	return c.MinioEndpoint + ":" + c.MinioPort
 }
 
 // ImageURL собирает публичный адрес изображения в Minio из ключа объекта

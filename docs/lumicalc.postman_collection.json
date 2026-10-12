@@ -1,0 +1,331 @@
+{
+  "info": {
+    "_postman_id": "6581897f-0c30-462e-b2f2-218fe0e5ab5c",
+    "name": "LumiCalc — веб-сервис светильников (ЛР3)",
+    "description": "Десять методов веб-сервиса. Запросы идут в порядке показа лабораторной №3. Метод ленты представлен двумя запросами: без ид и по ид с next=true.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Светильники",
+      "item": [
+        {
+          "name": "Список светильников с фильтром",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment?minPowerWatt=4.5&maxPowerWatt=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment"
+              ],
+              "query": [
+                {
+                  "key": "minPowerWatt",
+                  "value": "4.5"
+                },
+                {
+                  "key": "maxPowerWatt",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Опубликованные светильники с мощностью от minPowerWatt до maxPowerWatt. isCreatedByCurrentUser — признак 0/1: светильник создан текущим проектировщиком."
+          },
+          "response": []
+        },
+        {
+          "name": "Добавление светильника с фото и видео",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment"
+              ]
+            },
+            "description": "Форма multipart/form-data. Файлы equipmentImage и equipmentVideo нужно выбрать вручную, например из папки assets проекта. Светильник создаётся в статусе «черновик».",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "equipmentName",
+                  "value": "LED Value Classic A 60 8.5W 827 E27",
+                  "type": "text"
+                },
+                {
+                  "key": "equipmentImage",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "equipmentVideo",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Ид нового светильника запоминается для запросов публикации и удаления",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set('draftEquipmentId', pm.response.json().equipmentId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Черновик текущего проектировщика",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/draft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "draft"
+              ]
+            },
+            "description": "Ид не указывается: черновик у проектировщика не более одного."
+          },
+          "response": []
+        },
+        {
+          "name": "Публикация светильника",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/{{draftEquipmentId}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "{{draftEquipmentId}}",
+                "publish"
+              ]
+            },
+            "description": "Переход черновик → опубликован. Статус и дату формирования проставляет сервер.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shortDescription\": \"Светодиодная лампа для общего освещения жилых помещений, тёплый белый свет.\",\n  \"powerWatt\": 8.5,\n  \"beamAngleDeg\": 200\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Лента без ид",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/feed",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "feed"
+              ]
+            },
+            "description": "Первый опубликованный светильник. isLikedByCurrentUser — признак 0/1: текущий проектировщик лайкнул светильник."
+          },
+          "response": []
+        },
+        {
+          "name": "Лента по ид, следующий",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/1?next=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "1"
+              ],
+              "query": [
+                {
+                  "key": "next",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "С параметром next=true отдаётся следующий опубликованный светильник после указанного ид."
+          },
+          "response": []
+        },
+        {
+          "name": "Лайк светильника",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/3/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "3",
+                "like"
+              ]
+            },
+            "description": "equipmentLike: 1 ставит лайк, 0 отменяет.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentLike\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Удаление светильника",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/{{draftEquipmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "{{draftEquipmentId}}"
+              ]
+            },
+            "description": "Логическое удаление: статус меняется на «удалён». Удалить можно только свой светильник."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Проектировщики",
+      "item": [
+        {
+          "name": "Регистрация проектировщика",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "register"
+              ]
+            },
+            "description": "В БД сохраняется хэш пароля, в ответе пароля нет.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login\": \"n.fotonov\",\n  \"password\": \"photon-2026\",\n  \"fullName\": \"Фотонов Н. К.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Аутентификация (заглушка)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "login"
+              ]
+            },
+            "description": "Заглушка до лабораторной №4: отвечает 501."
+          },
+          "response": []
+        },
+        {
+          "name": "Деавторизация (заглушка)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "logout"
+              ]
+            },
+            "description": "Заглушка до лабораторной №4: отвечает 501."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "draftEquipmentId",
+      "value": "7"
+    }
+  ]
+}

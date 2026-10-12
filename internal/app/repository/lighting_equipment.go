@@ -1,8 +1,6 @@
 package repository
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -12,39 +10,53 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrDraftAlreadyExists — у проектировщика уже есть светильник в статусе "черновик"
-var ErrDraftAlreadyExists = errors.New("черновик светильника уже существует")
-
-// Базовый запрос: количество лайков считает сама БД подзапросом
-// к таблице связи м-м, в коде срезы не перебираются
-func (r *Repository) lightingEquipmentWithLikes() *gorm.DB {
+// Базовый запрос чтения. Вычисляемые поля считает сама БД, в коде срезы не перебираются:
+// количество лайков и признак "лайкнул текущий проектировщик" — подзапросами
+// к таблице связи м-м, признак "создал текущий проектировщик" — выражением CASE
+func (r *Repository) lightingEquipmentWithLikes(currentUserID int) *gorm.DB {
 	likesTotal := r.db.Model(&ds.LightingEquipmentLike{}).
 		Select("COUNT(*)").
 		Where("lighting_equipment_likes.equipment_id = lighting_equipment.equipment_id")
 
-	return r.db.Model(&ds.LightingEquipment{}).
-		Select("lighting_equipment.*, (?) AS likes_total", likesTotal)
+	// Пара (проектировщик, светильник) уникальна, поэтому здесь получается 0 либо 1
+	likedByCurrentUser := r.db.Model(&ds.LightingEquipmentLike{}).
+		Select("COUNT(*)").
+		Where("lighting_equipment_likes.equipment_id = lighting_equipment.equipment_id").
+		Where("lighting_equipment_likes.user_id = ?", currentUserID)
+
+	return r.db.Model(&ds.LightingEquipment{}).Select(
+		"lighting_equipment.*, "+
+			"(?) AS likes_total, "+
+			"(?) AS is_liked_by_current_user, "+
+			"CASE WHEN lighting_equipment.creator_id = ? THEN 1 ELSE 0 END AS is_created_by_current_user",
+		likesTotal, likedByCurrentUser, currentUserID,
+	)
 }
 
-// 1. GET списка для плитки: только опубликованные,
-// фильтр по диапазону мощности выполняется в SQL
-func (r *Repository) GetPublishedLightingEquipment(minPowerWatt, maxPowerWatt float64) ([]ds.LightingEquipmentWithLikes, error) {
-	var lightingEquipment []ds.LightingEquipmentWithLikes
-	err := r.lightingEquipmentWithLikes().
-		Where("equipment_status = ?", ds.LightingEquipmentStatusPublished).
-		Where("power_watt BETWEEN ? AND ?", minPowerWatt, maxPowerWatt).
-		Order("equipment_id ASC").
-		Find(&lightingEquipment).Error
+// 1. GET списка: только опубликованные, фильтр по диапазону мощности выполняется в SQL.
+// Граница nil означает, что с этой стороны диапазон не ограничен
+func (r *Repository) GetPublishedLightingEquipment(currentUserID int, minPowerWatt, maxPowerWatt *float64) ([]ds.LightingEquipmentWithLikes, error) {
+	query := r.lightingEquipmentWithLikes(currentUserID).
+		Where("equipment_status = ?", ds.LightingEquipmentStatusPublished)
+	if minPowerWatt != nil {
+		query = query.Where("power_watt >= ?", *minPowerWatt)
+	}
+	if maxPowerWatt != nil {
+		query = query.Where("power_watt <= ?", *maxPowerWatt)
+	}
+
+	lightingEquipment := []ds.LightingEquipmentWithLikes{}
+	err := query.Order("equipment_id ASC").Find(&lightingEquipment).Error
 	return lightingEquipment, err
 }
 
-// 2. GET ленты: БД возвращает сразу одну строку, фильтрации в коде нет.
-// next == false — опубликованный светильник с указанным id.
-// next == true  — следующий опубликованный после id; сортировка сначала ставит
-// строки с большим id, поэтому после последнего светильника лента возвращается к первому.
+// 2. GET ленты: БД возвращает сразу одну строку, только из опубликованных.
+// next == false — светильник с указанным id.
+// next == true  — следующий после id; сортировка сначала ставит строки с большим id,
+// поэтому после последнего светильника лента возвращается к первому.
 // Лента без id — это next от нуля, то есть первый опубликованный
-func (r *Repository) GetLightingEquipmentForFeed(equipmentID int, next bool) (*ds.LightingEquipmentWithLikes, error) {
-	query := r.lightingEquipmentWithLikes().
+func (r *Repository) GetLightingEquipmentForFeed(currentUserID, equipmentID int, next bool) (*ds.LightingEquipmentWithLikes, error) {
+	query := r.lightingEquipmentWithLikes(currentUserID).
 		Where("equipment_status = ?", ds.LightingEquipmentStatusPublished)
 
 	if next {
@@ -57,7 +69,16 @@ func (r *Repository) GetLightingEquipmentForFeed(equipmentID int, next bool) (*d
 	}
 
 	var equipment ds.LightingEquipmentWithLikes
-	if err := query.Take(&equipment).Error; err != nil {
+	err := query.Take(&equipment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrLightingEquipmentNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Создатель нужен для вложенной сериализации
+	if err = r.db.Take(&equipment.Creator, equipment.CreatorID).Error; err != nil {
 		return nil, err
 	}
 	return &equipment, nil
@@ -69,24 +90,19 @@ func (r *Repository) GetDraftLightingEquipment(creatorID int) (*ds.LightingEquip
 	err := r.db.
 		Where("creator_id = ? AND equipment_status = ?", creatorID, ds.LightingEquipmentStatusDraft).
 		Take(&draft).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrLightingEquipmentNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
 	return &draft, nil
 }
 
-// 4. POST добавления (кнопка «Далее»): создаёт черновик через ORM.
-// Сами файлы в этой лабораторной не загружаются — в таблицу пишутся
-// адреса несуществующих объектов Minio
-func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, imageURL, videoURL string) error {
-	_, err := r.GetDraftLightingEquipment(creatorID)
-	if err == nil {
-		return ErrDraftAlreadyExists
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-
+// 4. POST добавления: создаёт светильник в статусе "черновик".
+// Системные поля (статус, создатель, дата создания) проставляет сервер.
+// Второй черновик не даёт создать частичный уникальный индекс uq_draft_per_creator
+func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, imageURL, videoURL string) (*ds.LightingEquipment, error) {
 	draft := ds.LightingEquipment{
 		EquipmentName:   equipmentName,
 		EquipmentStatus: ds.LightingEquipmentStatusDraft,
@@ -95,80 +111,116 @@ func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, 
 		CreatedAt:       time.Now(),
 		CreatorID:       creatorID,
 	}
-	return r.db.Create(&draft).Error
+
+	err := r.db.Omit(clause.Associations).Create(&draft).Error
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return nil, ErrDraftAlreadyExists
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &draft, nil
 }
 
-// 5. POST публикации: смена статуса черновик -> опубликован через ORM,
-// одновременно заполняются описание, оба поля по теме и дата формирования
-func (r *Repository) PublishDraftLightingEquipment(creatorID int, shortDescription string, powerWatt float64, beamAngleDeg int) error {
-	draft, err := r.GetDraftLightingEquipment(creatorID)
-	if err != nil {
-		return err
+// Находит неудалённый светильник и блокирует строку до конца транзакции.
+// Менять светильник может только его создатель
+func lockOwnLightingEquipment(tx *gorm.DB, creatorID, equipmentID int) (*ds.LightingEquipment, error) {
+	var equipment ds.LightingEquipment
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("equipment_id = ? AND equipment_status <> ?", equipmentID, ds.LightingEquipmentStatusDeleted).
+		Take(&equipment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrLightingEquipmentNotFound
 	}
-
-	formedAt := time.Now()
-	draft.ShortDescription = &shortDescription
-	draft.PowerWatt = &powerWatt
-	draft.BeamAngleDeg = &beamAngleDeg
-	draft.EquipmentStatus = ds.LightingEquipmentStatusPublished
-	draft.FormedAt = &formedAt
-	return r.db.Save(draft).Error
+	if err != nil {
+		return nil, err
+	}
+	if equipment.CreatorID != creatorID {
+		return nil, ErrForeignLightingEquipment
+	}
+	return &equipment, nil
 }
 
-// 6. POST логического удаления: сырой SQL через курсор, без ORM.
-// Запись остаётся в таблице, меняется только статус.
-// Курсор объявляется с FOR UPDATE, строка читается через FETCH,
-// обновление идёт по позиции курсора (WHERE CURRENT OF) —
-// всё внутри одной транзакции, как того требует PostgreSQL
-func (r *Repository) DeleteLightingEquipment(equipmentID int) error {
-	sqlDB, err := r.db.DB()
-	if err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-	tx, err := sqlDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	_, err = tx.ExecContext(ctx,
-		`DECLARE lighting_equipment_cursor CURSOR FOR
-		   SELECT equipment_id
-		     FROM lighting_equipment
-		    WHERE equipment_id = $1
-		      AND equipment_status <> $2
-		      FOR UPDATE`,
-		equipmentID, ds.LightingEquipmentStatusDeleted,
-	)
-	if err != nil {
-		return err
-	}
-
-	// Читаем одну строку из курсора
-	var fetchedEquipmentID int
-	err = tx.QueryRowContext(ctx, `FETCH NEXT FROM lighting_equipment_cursor`).Scan(&fetchedEquipmentID)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		// Светильника нет или он уже удалён — обновлять нечего
-	case err != nil:
-		return err
-	default:
-		// Обновляем именно ту строку, на которой стоит курсор
-		_, err = tx.ExecContext(ctx,
-			`UPDATE lighting_equipment
-			    SET equipment_status = $1
-			  WHERE CURRENT OF lighting_equipment_cursor`,
-			ds.LightingEquipmentStatusDeleted,
-		)
+// 5. PUT публикации: переход черновик -> опубликован, других переходов метод не делает.
+// Одновременно заполняются описание и оба поля по теме, дату формирования ставит сервер
+func (r *Repository) PublishLightingEquipment(creatorID, equipmentID int, shortDescription string, powerWatt float64, beamAngleDeg int) (*ds.LightingEquipment, error) {
+	var published *ds.LightingEquipment
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		equipment, err := lockOwnLightingEquipment(tx, creatorID, equipmentID)
 		if err != nil {
 			return err
 		}
-	}
+		if equipment.EquipmentStatus != ds.LightingEquipmentStatusDraft {
+			return ErrLightingEquipmentNotDraft
+		}
 
-	if _, err = tx.ExecContext(ctx, `CLOSE lighting_equipment_cursor`); err != nil {
-		return err
+		formedAt := time.Now()
+		equipment.ShortDescription = &shortDescription
+		equipment.PowerWatt = &powerWatt
+		equipment.BeamAngleDeg = &beamAngleDeg
+		equipment.EquipmentStatus = ds.LightingEquipmentStatusPublished
+		equipment.FormedAt = &formedAt
+
+		published = equipment
+		return tx.Model(equipment).
+			Select("ShortDescription", "PowerWatt", "BeamAngleDeg", "EquipmentStatus", "FormedAt").
+			Updates(equipment).Error
+	})
+	if err != nil {
+		return nil, err
 	}
-	return tx.Commit()
+	return published, nil
+}
+
+// 6. DELETE: только логическое удаление — запись остаётся в таблице,
+// меняется статус. Удалить можно черновик или опубликованный светильник
+func (r *Repository) DeleteLightingEquipment(creatorID, equipmentID int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		equipment, err := lockOwnLightingEquipment(tx, creatorID, equipmentID)
+		if err != nil {
+			return err
+		}
+		return tx.Model(equipment).
+			Update("EquipmentStatus", ds.LightingEquipmentStatusDeleted).Error
+	})
+}
+
+// 7. POST лайка: liked == true ставит лайк, false — отменяет.
+// Повторный запрос ничего не меняет: вторая такая же строка не появится
+// из-за уникального индекса, а отмена несуществующего лайка удаляет ноль строк.
+// Возвращает количество лайков светильника после изменения
+func (r *Repository) SetLightingEquipmentLike(userID, equipmentID int, liked bool) (int64, error) {
+	var likesTotal int64
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// Лайкать можно только опубликованные светильники
+		var publishedTotal int64
+		err := tx.Model(&ds.LightingEquipment{}).
+			Where("equipment_id = ? AND equipment_status = ?", equipmentID, ds.LightingEquipmentStatusPublished).
+			Count(&publishedTotal).Error
+		if err != nil {
+			return err
+		}
+		if publishedTotal == 0 {
+			return ErrLightingEquipmentNotFound
+		}
+
+		if liked {
+			like := ds.LightingEquipmentLike{LikedByUserID: userID, LikedEquipmentID: equipmentID}
+			err = tx.Omit(clause.Associations).
+				Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&like).Error
+		} else {
+			err = tx.
+				Where("user_id = ? AND equipment_id = ?", userID, equipmentID).
+				Delete(&ds.LightingEquipmentLike{}).Error
+		}
+		if err != nil {
+			return err
+		}
+
+		return tx.Model(&ds.LightingEquipmentLike{}).
+			Where("equipment_id = ?", equipmentID).
+			Count(&likesTotal).Error
+	})
+	return likesTotal, err
 }

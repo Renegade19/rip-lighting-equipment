@@ -1,76 +1,114 @@
 package handler
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
-	"path"
-	"regexp"
-	"strings"
-	"sync"
 	"time"
 )
 
-// Фото и видео по умолчанию хранятся вместе с иконками на SSR-сервере.
-// Подставляются, если в БД пустое поле url либо файл по ссылке недоступен
+// Ограничения на загружаемые файлы
 const (
-	DefaultImageURL = "/images/default-equipment.svg"
-	DefaultVideoURL = "/videos/default-equipment.mp4"
+	maxEquipmentImageBytes = 10 << 20  // 10 МБ
+	maxEquipmentVideoBytes = 100 << 20 // 100 МБ
+	// Тело запроса добавления: оба файла и текстовые поля формы
+	maxCreateRequestBytes = maxEquipmentImageBytes + maxEquipmentVideoBytes + (1 << 20)
 )
 
-const mediaCheckTTL = time.Minute
-
-type mediaCheck struct {
-	ok        bool
-	checkedAt time.Time
-}
-
+// Допустимые типы файлов и расширения, с которыми они сохраняются в Minio
 var (
-	mediaClient = &http.Client{Timeout: time.Second}
-	mediaChecks sync.Map // url -> mediaCheck
+	equipmentImageTypes = map[string]string{
+		"image/jpeg": ".jpg",
+		"image/png":  ".png",
+		"image/webp": ".webp",
+		"image/gif":  ".gif",
+	}
+	equipmentVideoTypes = map[string]string{
+		"video/mp4":  ".mp4",
+		"video/webm": ".webm",
+	}
 )
 
-// Проверяет запросом HEAD, что файл по ссылке существует.
-// Результат запоминается на минуту, чтобы не опрашивать Minio на каждый запрос страницы
-func isMediaReachable(url string) bool {
-	if cached, found := mediaChecks.Load(url); found {
-		if check := cached.(mediaCheck); time.Since(check.checkedAt) < mediaCheckTTL {
-			return check.ok
-		}
-	}
-
-	ok := false
-	if response, err := mediaClient.Head(url); err == nil {
-		response.Body.Close()
-		ok = response.StatusCode == http.StatusOK
-	}
-	mediaChecks.Store(url, mediaCheck{ok: ok, checkedAt: time.Now()})
-	return ok
+// lightingEquipmentMedia — проверенный файл, готовый к загрузке в Minio
+type lightingEquipmentMedia struct {
+	header      *multipart.FileHeader
+	contentType string
+	// Имя файла в Minio: сгенерировано сервером, только латиница, цифры и дефисы
+	fileName string
 }
 
-// Возвращает рабочий адрес изображения либо изображение по умолчанию
-func resolveImageURL(imageURL *string) string {
-	if imageURL == nil || *imageURL == "" || !isMediaReachable(*imageURL) {
-		return DefaultImageURL
+// Определяет тип файла по содержимому: заголовку Content-Type
+// и расширению из запроса доверять нельзя
+func detectMediaType(head []byte) string {
+	contentType := http.DetectContentType(head)
+	// Стандартная проверка узнаёт не все разновидности mp4 — добавляем проверку
+	// по блоку ftyp. У QuickTime (.mov) блок такой же, но браузеры его не играют
+	if contentType == "application/octet-stream" && len(head) >= 12 &&
+		string(head[4:8]) == "ftyp" && string(head[8:12]) != "qt  " {
+		return "video/mp4"
 	}
-	return *imageURL
+	return contentType
 }
 
-// Возвращает рабочий адрес видео либо видео по умолчанию
-func resolveVideoURL(videoURL *string) string {
-	if videoURL == nil || *videoURL == "" || !isMediaReachable(*videoURL) {
-		return DefaultVideoURL
+// Генерирует имя файла на латинице. От исходного имени не берётся ничего:
+// расширение определяется по типу содержимого
+func generateMediaFileName(kind, extension string) (string, error) {
+	suffix := make([]byte, 4)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", err
 	}
-	return *videoURL
+	return fmt.Sprintf("lighting-equipment-%s-%d-%s%s",
+		kind, time.Now().UnixMilli(), hex.EncodeToString(suffix), extension), nil
 }
 
-var mediaExtension = regexp.MustCompile(`^\.[a-z0-9]{1,5}$`)
-
-// Генерирует ключ объекта Minio на латинице для выбранного файла.
-// От имени файла берётся только расширение
-func generateMediaKey(kind, fileName, defaultExtension string) string {
-	extension := strings.ToLower(path.Ext(fileName))
-	if !mediaExtension.MatchString(extension) {
-		extension = defaultExtension
+// Проверяет файл из формы: размер и тип по содержимому.
+// kind — "image" или "video", title — название файла для сообщений об ошибках
+func validateLightingEquipmentMedia(header *multipart.FileHeader, kind, title string, allowedTypes map[string]string, maxBytes int64) (*lightingEquipmentMedia, error) {
+	if header.Size == 0 {
+		return nil, fmt.Errorf("%s: файл пустой", title)
 	}
-	return fmt.Sprintf("lighting-equipment-%s-%d%s", kind, time.Now().UnixMilli(), extension)
+	if header.Size > maxBytes {
+		return nil, fmt.Errorf("%s: файл больше %d МБ", title, maxBytes>>20)
+	}
+
+	file, err := header.Open()
+	if err != nil {
+		return nil, fmt.Errorf("%s: не удалось прочитать файл", title)
+	}
+	defer file.Close()
+
+	// Тип файла определяется по его первым 512 байтам
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("%s: не удалось прочитать файл", title)
+	}
+
+	contentType := detectMediaType(head[:n])
+	extension, allowed := allowedTypes[contentType]
+	if !allowed {
+		return nil, fmt.Errorf("%s: тип файла %s не поддерживается", title, contentType)
+	}
+
+	fileName, err := generateMediaFileName(kind, extension)
+	if err != nil {
+		return nil, err
+	}
+	return &lightingEquipmentMedia{header: header, contentType: contentType, fileName: fileName}, nil
+}
+
+// Загружает проверенный файл в Minio
+func (h *Handler) uploadLightingEquipmentMedia(ctx context.Context, media *lightingEquipmentMedia) error {
+	file, err := media.header.Open()
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return h.Repository.UploadLightingEquipmentMedia(ctx, media.fileName, file, media.header.Size, media.contentType)
 }
