@@ -9,9 +9,13 @@
 <body class="page page--feed">
   <div class="screen screen--feed">
     <div class="feed-media">
-      <!-- Если у светильника нет видео или файл недоступен, сюда приходит
-           адрес видео по умолчанию с SSR-сервера, то же самое с изображением -->
-      <video class="feed-media__video" src="{{.Equipment.VideoURL}}" autoplay muted loop playsinline poster="{{.Equipment.ImageURL}}"></video>
+      <!-- У светильника без своего видео показывается его фото. Если нет
+           ни видео, ни фото — фото и видео по умолчанию с SSR-сервера -->
+      {{if .Equipment.PhotoInsteadOfVideo}}
+        <img class="feed-media__video" src="{{.Equipment.ImageURL}}" alt="{{.Equipment.EquipmentName}}" />
+      {{else}}
+        <video class="feed-media__video" src="{{.Equipment.VideoURL}}" autoplay muted loop playsinline poster="{{.Equipment.ImageURL}}"></video>
+      {{end}}
 
       <div class="feed-gradient"></div>
 

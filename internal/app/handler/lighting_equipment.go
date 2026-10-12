@@ -30,14 +30,20 @@ type lightingEquipmentCard struct {
 	LikesTotal int64
 	ImageURL   string
 	VideoURL   string
+	// В ленте у светильника без своего видео показывается его фото.
+	// Видео по умолчанию остаётся, только когда нет ни видео, ни фото
+	PhotoInsteadOfVideo bool
 }
 
 func toCard(equipment ds.LightingEquipment, likesTotal int64) lightingEquipmentCard {
+	imageURL := resolveImageURL(equipment.ImageURL)
+	videoURL := resolveVideoURL(equipment.VideoURL)
 	return lightingEquipmentCard{
-		LightingEquipment: equipment,
-		LikesTotal:        likesTotal,
-		ImageURL:          resolveImageURL(equipment.ImageURL),
-		VideoURL:          resolveVideoURL(equipment.VideoURL),
+		LightingEquipment:   equipment,
+		LikesTotal:          likesTotal,
+		ImageURL:            imageURL,
+		VideoURL:            videoURL,
+		PhotoInsteadOfVideo: videoURL == DefaultVideoURL && imageURL != DefaultImageURL,
 	}
 }
 
