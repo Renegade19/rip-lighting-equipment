@@ -88,17 +88,20 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 Все адреса начинаются с `/api`. Тела запросов и ответов — JSON,
 кроме добавления светильника: там форма `multipart/form-data` с файлами.
 
-### Домен «светильники»
+| № | Домен | Метод | Адрес | Назначение |
+|---|---|---|---|---|
+| 1 | светильники | GET | `/api/lighting-equipment` | список опубликованных с фильтром по мощности |
+| 2 | светильники | GET | `/api/lighting-equipment/feed`, `/api/lighting-equipment/:equipment_id` | лента: один опубликованный светильник |
+| 3 | светильники | GET | `/api/lighting-equipment/draft` | черновик текущего проектировщика |
+| 4 | светильники | POST | `/api/lighting-equipment` | добавление светильника с фото и видео |
+| 5 | светильники | PUT | `/api/lighting-equipment/:equipment_id/publish` | публикация: черновик → опубликован |
+| 6 | светильники | DELETE | `/api/lighting-equipment/:equipment_id` | логическое удаление своего светильника |
+| 7 | светильники | POST | `/api/lighting-equipment/:equipment_id/like` | поставить или отменить лайк |
+| 8 | проектировщики | POST | `/api/lighting-users/register` | регистрация |
+| 9 | проектировщики | POST | `/api/lighting-users/login` | аутентификация — заглушка до ЛР4 |
+| 10 | проектировщики | POST | `/api/lighting-users/logout` | деавторизация — заглушка до ЛР4 |
 
-| № | Метод | Адрес | Назначение |
-|---|---|---|---|
-| 1 | GET | `/api/lighting-equipment` | список опубликованных с фильтром по мощности |
-| 2 | GET | `/api/lighting-equipment/feed`, `/api/lighting-equipment/:equipment_id` | лента: один опубликованный светильник |
-| 3 | GET | `/api/lighting-equipment/draft` | черновик текущего проектировщика |
-| 4 | POST | `/api/lighting-equipment` | добавление светильника с фото и видео |
-| 5 | PUT | `/api/lighting-equipment/:equipment_id/publish` | публикация: черновик → опубликован |
-| 6 | DELETE | `/api/lighting-equipment/:equipment_id` | логическое удаление своего светильника |
-| 7 | POST | `/api/lighting-equipment/:equipment_id/like` | поставить или отменить лайк |
+### Домен «светильники»
 
 **1. GET `/api/lighting-equipment?minPowerWatt=4.5&maxPowerWatt=10`** — список.
 Оба параметра необязательны: без них отдаются все опубликованные.
@@ -206,12 +209,6 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 Ошибки: `400` — значение не 0 и не 1; `404` — светильника нет среди опубликованных.
 
 ### Домен «проектировщики»
-
-| № | Метод | Адрес | Назначение |
-|---|---|---|---|
-| 8 | POST | `/api/lighting-users/register` | регистрация |
-| 9 | POST | `/api/lighting-users/login` | аутентификация — заглушка до ЛР4 |
-| 10 | POST | `/api/lighting-users/logout` | деавторизация — заглушка до ЛР4 |
 
 **8. POST `/api/lighting-users/register`** — регистрация. Тело:
 
