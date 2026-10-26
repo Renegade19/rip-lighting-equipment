@@ -1,43 +1,51 @@
-# LumiCalc — Лабораторная работа №3 (Go)
+# LumiCalc — Лабораторная работа №4 (Go)
 
 Тема: **Расчёт освещённости помещения светодиодными лампами**.
 `Услуги` — модели светильников (мощность, угол рассеивания).
 
 Веб-сервис для будущего SPA: отдаёт и принимает JSON, страниц не рисует.
-В нём вся бизнес-логика приложения, кроме авторизации.
+В нём вся бизнес-логика приложения. Пользователь определяется по JWT,
+вышедшие из системы токены хранятся в чёрном списке Redis, методы описаны в Swagger.
 
 Стек: **Go + gin + PostgreSQL + gORM**, фото и видео — **Minio** (`minio-go`),
-администрирование БД — **Adminer** (всё поднимается через `docker compose`).
+авторизация — **JWT** (`golang-jwt/jwt/v5`) и **Redis** (`go-redis/v9`),
+документация — **Swagger** (`swaggo`), администрирование БД — **Adminer**
+(хранилища поднимаются через `docker compose`).
 
 Ветки: `lighting-equipment-lab1` — ЛР1 (коллекция в памяти, три GET),
 `lighting-equipment-lab2` — ЛР2 (база данных, шесть HTTP-методов, HTML-страницы),
-`lighting-equipment-lab3` — ЛР3 (веб-сервис, десять методов).
+`lighting-equipment-lab3` — ЛР3 (веб-сервис, десять методов),
+`lighting-equipment-lab4` — ЛР4 (JWT, Redis, Swagger).
 
 ## Структура проекта
 
 ```
-cmd/lighting-equipment/main.go             # точка входа веб-сервиса
+cmd/lighting-equipment/main.go             # точка входа веб-сервиса, общее описание Swagger
 cmd/migrate/main.go                        # создание таблиц (go run ./cmd/migrate)
-internal/api/server.go                     # сборка сервиса: БД, Minio, маршруты
+internal/api/server.go                     # сборка сервиса: БД, Minio, Redis, маршруты
 internal/app/
-  config/config.go                         # настройки из .env, сборка адресов файлов Minio
+  config/config.go                         # настройки из .env: Minio, JWT, Redis
   dsn/dsn.go                               # строка подключения к PostgreSQL
   ds/                                      # модели: светильник, проектировщик, лайк
   ds/serializers.go                        # сериализаторы запросов и ответов (JSON)
+  ds/jwt_claims.go                         # содержимое JWT: ид и логин проектировщика
+  redis/redis.go                           # чёрный список JWT в Redis
   repository/repository.go                 # подключение к PostgreSQL (gORM) и Minio
   repository/lighting_equipment.go         # запросы домена "светильники" (ORM)
   repository/lighting_equipment_media.go   # загрузка и удаление файлов в Minio
   repository/lighting_user.go              # запросы домена "проектировщики" (ORM)
-  handler/handler.go                       # маршруты и единый формат ошибок
+  handler/handler.go                       # маршруты, доступ гостя и создателя, Swagger UI
+  handler/auth.go                          # middleware проверки JWT
   handler/lighting_equipment.go            # семь методов домена "светильники"
-  handler/lighting_user.go                 # три метода домена "проектировщики"
-  handler/current_lighting_user.go         # функция-singleton: текущий проектировщик
+  handler/lighting_user.go                 # регистрация, вход (выдача JWT), выход
+  handler/current_lighting_user.go         # текущий проектировщик из JWT
   handler/media.go                         # проверка файлов и генерация имён
 assets/                                    # фото и видео для начального наполнения Minio
 scripts/seed.sql                           # наполнение таблиц через Adminer
+docs/docs.go, swagger.json, swagger.yaml   # документация Swagger (генерирует swag init)
 docs/lumicalc.postman_collection.json      # коллекция запросов Postman
 docs/control-questions.md                  # ответы на контрольные вопросы
-docker-compose.yml                         # Minio, PostgreSQL, Adminer
+docker-compose.yml                         # Minio, PostgreSQL, Adminer, Redis
 ```
 
 ## Таблицы БД
@@ -87,19 +95,27 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 
 Все адреса начинаются с `/api`. Тела запросов и ответов — JSON,
 кроме добавления светильника: там форма `multipart/form-data` с файлами.
+Документация Swagger: http://localhost:3000/swagger/index.html
 
-| № | Домен | Метод | Адрес | Назначение |
-|---|---|---|---|---|
-| 1 | светильники | GET | `/api/lighting-equipment` | список опубликованных с фильтром по мощности |
-| 2 | светильники | GET | `/api/lighting-equipment/feed`, `/api/lighting-equipment/:equipment_id` | лента: один опубликованный светильник |
-| 3 | светильники | GET | `/api/lighting-equipment/draft` | черновик текущего проектировщика |
-| 4 | светильники | POST | `/api/lighting-equipment` | добавление светильника с фото и видео |
-| 5 | светильники | PUT | `/api/lighting-equipment/:equipment_id/publish` | публикация: черновик → опубликован |
-| 6 | светильники | DELETE | `/api/lighting-equipment/:equipment_id` | логическое удаление своего светильника |
-| 7 | светильники | POST | `/api/lighting-equipment/:equipment_id/like` | поставить или отменить лайк |
-| 8 | проектировщики | POST | `/api/lighting-users/register` | регистрация |
-| 9 | проектировщики | POST | `/api/lighting-users/login` | аутентификация — заглушка до ЛР4 |
-| 10 | проектировщики | POST | `/api/lighting-users/logout` | деавторизация — заглушка до ЛР4 |
+Доступ: **гость** — без токена; **создатель** — с заголовком
+`Authorization: Bearer <accessToken>` из ответа метода 9.
+
+| № | Домен | Метод | Адрес | Доступ | Назначение |
+|---|---|---|---|---|---|
+| 1 | светильники | GET | `/api/lighting-equipment` | гость | список опубликованных с фильтром по мощности |
+| 2 | светильники | GET | `/api/lighting-equipment/feed`, `/api/lighting-equipment/:equipment_id` | гость | лента: один опубликованный светильник |
+| 3 | светильники | GET | `/api/lighting-equipment/draft` | создатель | черновик текущего проектировщика |
+| 4 | светильники | POST | `/api/lighting-equipment` | создатель | добавление светильника с фото и видео |
+| 5 | светильники | PUT | `/api/lighting-equipment/:equipment_id/publish` | создатель | публикация: черновик → опубликован |
+| 6 | светильники | DELETE | `/api/lighting-equipment/:equipment_id` | создатель | логическое удаление своего светильника |
+| 7 | светильники | POST | `/api/lighting-equipment/:equipment_id/like` | создатель | поставить или отменить лайк |
+| 8 | проектировщики | POST | `/api/lighting-users/register` | гость | регистрация |
+| 9 | проектировщики | POST | `/api/lighting-users/login` | гость | аутентификация: выдаёт JWT |
+| 10 | проектировщики | POST | `/api/lighting-users/logout` | создатель | выход: JWT попадает в чёрный список Redis |
+
+Методы 1 и 2 работают с токеном и без него. С действующим токеном в ответе
+заполняются признаки текущего проектировщика, без токена они равны 0.
+Методам создателя без действующего токена сервер отвечает `401`.
 
 ### Домен «светильники»
 
@@ -225,8 +241,37 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 
 Ошибки: `400` — поле заполнено неверно; `409` — логин занят.
 
-**9–10.** Методы аутентификации и деавторизации отвечают `501 Not Implemented`:
-их логика появится в ЛР4.
+**9. POST `/api/lighting-users/login`** — аутентификация. Тело:
+
+```json
+{ "login": "a.parahnevich", "password": "lumicalc-demo" }
+```
+
+Сервер сверяет пароль с хэшем bcrypt и выдаёт JWT, подписанный HS256.
+В токене — ид и логин проектировщика, срок жизни задаёт `JWT_EXPIRES_IN` (по умолчанию 1 час).
+Ответ `200`:
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "user": { "userId": 1, "login": "a.parahnevich", "fullName": "Парахневич А." }
+}
+```
+
+Ошибки: `400` — не указан логин или пароль; `401` — неверный логин или пароль
+(одна ошибка на оба случая, чтобы по ответу нельзя было узнать, есть ли такой логин).
+
+**10. POST `/api/lighting-users/logout`** — выход, нужен заголовок `Authorization`.
+Токен записывается в Redis с ключом `lumicalc.jwt.blacklist.<токен>`, значение — логин,
+срок хранения — сколько токену оставалось жить. Ответ `200`:
+
+```json
+{ "status": "ok", "description": "проектировщик вышел из системы, токен больше не действует" }
+```
+
+Ошибки: `401` — нет токена, он недействителен или уже в чёрном списке.
 
 ### Формат ошибок
 
@@ -248,11 +293,33 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
   поэтому присланные значения игнорируются.
 - **Менять светильник может только создатель.** Публикация и удаление чужого
   светильника отвечают `403`.
-- **Текущий проектировщик зафиксирован константой** в функции-singleton
-  `getCurrentLightingUserID` (`internal/app/handler/current_lighting_user.go`).
-  Авторизация появится в ЛР4 — изменится только эта функция.
+- **Текущий проектировщик берётся из JWT.** Middleware проверяет токен и кладёт его
+  содержимое в контекст запроса, функция `getCurrentLightingUserID`
+  (`internal/app/handler/current_lighting_user.go`) читает оттуда ид.
+  В ЛР3 на этом месте была константа — вызовы в обработчиках не изменились.
+  Создатель нового светильника заполняется автоматически из токена.
 - **Вся работа с БД идёт через ORM** (gORM), включая логическое удаление,
   которое в ЛР2 выполнялось SQL-курсором.
+
+## Авторизация
+
+Middleware `WithAuthCheck` (методы создателя) и `WithOptionalAuth` (методы чтения)
+в `internal/app/handler/auth.go` проверяют токен по шагам:
+
+1. заголовок `Authorization` начинается с `Bearer `;
+2. подпись HS256 совпадает с ключом `JWT_SECRET_KEY`, срок жизни не истёк;
+3. токена нет в чёрном списке Redis.
+
+Если хоть одна проверка не прошла, `WithAuthCheck` отвечает `401`,
+а `WithOptionalAuth` выполняет запрос как от гостя.
+
+Содержимое Redis можно посмотреть из командной строки:
+
+```bash
+docker exec -it lighting-equipment-go-redis redis-cli --scan --pattern 'lumicalc.jwt.blacklist.*'
+docker exec -it lighting-equipment-go-redis redis-cli GET 'lumicalc.jwt.blacklist.<токен>'
+docker exec -it lighting-equipment-go-redis redis-cli TTL 'lumicalc.jwt.blacklist.<токен>'
+```
 
 ## Файлы в Minio
 
@@ -267,7 +334,7 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 1. Положить видео `smart-matter-classic-a.mp4` в папку `assets/`
    (в репозитории не хранится из-за размера; фото там уже лежат).
 
-2. Поднять Minio, PostgreSQL и Adminer:
+2. Поднять Minio, PostgreSQL, Adminer и Redis:
    ```bash
    docker compose up -d
    ```
@@ -291,7 +358,18 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
    ```bash
    go run ./cmd/lighting-equipment
    ```
-   Сервис отвечает по адресу http://localhost:3000/api.
+   Сервис отвечает по адресу http://localhost:3000/api,
+   Swagger — http://localhost:3000/swagger/index.html.
+   Учебные проектировщики из `seed.sql`: логины `a.parahnevich`, `i.svetov`,
+   `m.lampova`, `d.luxov`, пароль у всех `lumicalc-demo`.
 
 7. Импортировать в Postman коллекцию `docs/lumicalc.postman_collection.json`.
+   Запрос «Аутентификация» сам сохраняет `accessToken` в переменную коллекции,
+   методы создателя подставляют его в заголовок `Authorization`.
    В запросе добавления выбрать файлы фото и видео вручную, например из папки `assets/`.
+
+8. После изменения аннотаций Swagger пересобрать документацию:
+   ```bash
+   go install github.com/swaggo/swag/cmd/swag@v1.16.6
+   swag init -g cmd/lighting-equipment/main.go -o docs --parseInternal
+   ```

@@ -46,6 +46,17 @@ func parsePowerWatt(ctx *gin.Context, name string) (*float64, error) {
 // GetLightingEquipmentList — GET списка: опубликованные светильники
 // с фильтром по диапазону мощности (Вт). У каждого — признак 0/1,
 // создан ли он текущим проектировщиком
+//
+//	@Summary		Список светильников
+//	@Description	Опубликованные светильники с фильтром по диапазону мощности. Доступен гостю.
+//	@Description	С токеном у каждого светильника заполняется признак isCreatedByCurrentUser.
+//	@Tags			lighting-equipment
+//	@Produce		json
+//	@Param			minPowerWatt	query		number	false	"Нижняя граница мощности, Вт"	example(4.5)
+//	@Param			maxPowerWatt	query		number	false	"Верхняя граница мощности, Вт"	example(10)
+//	@Success		200				{array}		ds.LightingEquipmentTileSerializer
+//	@Failure		400				{object}	ds.StatusSerializer
+//	@Router			/lighting-equipment [get]
 func (h *Handler) GetLightingEquipmentList(ctx *gin.Context) {
 	minPowerWatt, err := parsePowerWatt(ctx, "minPowerWatt")
 	if err != nil {
@@ -63,7 +74,7 @@ func (h *Handler) GetLightingEquipmentList(ctx *gin.Context) {
 		minPowerWatt, maxPowerWatt = maxPowerWatt, minPowerWatt
 	}
 
-	lightingEquipment, err := h.Repository.GetPublishedLightingEquipment(getCurrentLightingUserID(), minPowerWatt, maxPowerWatt)
+	lightingEquipment, err := h.Repository.GetPublishedLightingEquipment(getCurrentLightingUserID(ctx), minPowerWatt, maxPowerWatt)
 	if err != nil {
 		h.repositoryErrorHandler(ctx, err)
 		return
@@ -79,6 +90,19 @@ func (h *Handler) GetLightingEquipmentList(ctx *gin.Context) {
 // GetLightingEquipmentFeed — GET ленты: один опубликованный светильник
 // с признаком 0/1, лайкнул ли его текущий проектировщик.
 // Без ид отдаётся первый, с ?next=true — следующий после указанного ид
+//
+//	@Summary		Лента: один светильник
+//	@Description	Без ид (/feed) — первый опубликованный, /{equipment_id} — по ид,
+//	@Description	с ?next=true — следующий после указанного. Доступен гостю.
+//	@Description	С токеном заполняется признак isLikedByCurrentUser.
+//	@Tags			lighting-equipment
+//	@Produce		json
+//	@Param			equipment_id	path		int		true	"Ид светильника"
+//	@Param			next			query		bool	false	"Открыть следующий после указанного ид"
+//	@Success		200				{object}	ds.LightingEquipmentFeedSerializer
+//	@Failure		400				{object}	ds.StatusSerializer
+//	@Failure		404				{object}	ds.StatusSerializer
+//	@Router			/lighting-equipment/{equipment_id} [get]
 func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 	equipmentID := 0
 	next := ctx.Query("next") == "true"
@@ -95,7 +119,7 @@ func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 		next = true
 	}
 
-	equipment, err := h.Repository.GetLightingEquipmentForFeed(getCurrentLightingUserID(), equipmentID, next)
+	equipment, err := h.Repository.GetLightingEquipmentForFeed(getCurrentLightingUserID(ctx), equipmentID, next)
 	if err != nil {
 		h.repositoryErrorHandler(ctx, err)
 		return
@@ -103,10 +127,36 @@ func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentFeedSerializer(*equipment))
 }
 
+// GetLightingEquipmentFeedFirst — GET ленты без ид (вкладка «Лента»):
+// первый опубликованный светильник. Отдельный метод нужен для Swagger,
+// сама логика — в GetLightingEquipmentFeed
+//
+//	@Summary		Лента без ид
+//	@Description	Первый опубликованный светильник. Доступен гостю.
+//	@Description	С токеном заполняется признак isLikedByCurrentUser.
+//	@Tags			lighting-equipment
+//	@Produce		json
+//	@Success		200	{object}	ds.LightingEquipmentFeedSerializer
+//	@Failure		404	{object}	ds.StatusSerializer
+//	@Router			/lighting-equipment/feed [get]
+func (h *Handler) GetLightingEquipmentFeedFirst(ctx *gin.Context) {
+	h.GetLightingEquipmentFeed(ctx)
+}
+
 // GetLightingEquipmentDraft — GET черновика текущего проектировщика.
 // Ид не указывается: черновик у проектировщика не более одного
+//
+//	@Summary		Черновик текущего проектировщика
+//	@Description	Светильник в статусе «черновик», ид не указывается: черновик не более одного.
+//	@Tags			lighting-equipment
+//	@Produce		json
+//	@Success		200	{object}	ds.LightingEquipmentSerializer
+//	@Failure		401	{object}	ds.StatusSerializer
+//	@Failure		404	{object}	ds.StatusSerializer
+//	@Security		BearerAuth
+//	@Router			/lighting-equipment/draft [get]
 func (h *Handler) GetLightingEquipmentDraft(ctx *gin.Context) {
-	draft, err := h.Repository.GetDraftLightingEquipment(getCurrentLightingUserID())
+	draft, err := h.Repository.GetDraftLightingEquipment(getCurrentLightingUserID(ctx))
 	if errors.Is(err, repository.ErrLightingEquipmentNotFound) {
 		h.errorHandler(ctx, http.StatusNotFound, errors.New("у проектировщика нет светильника в статусе «черновик»"))
 		return
@@ -121,8 +171,25 @@ func (h *Handler) GetLightingEquipmentDraft(ctx *gin.Context) {
 // CreateLightingEquipment — POST добавления: название и два файла (multipart/form-data).
 // Файлы сохраняются в Minio под сгенерированными именами на латинице,
 // в БД записываются адреса этих файлов. Светильник создаётся в статусе "черновик"
+//
+//	@Summary		Добавление светильника
+//	@Description	Название и файлы фото и видео. Файлы сохраняются в Minio,
+//	@Description	светильник создаётся в статусе «черновик», создатель — из токена.
+//	@Tags			lighting-equipment
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Param			equipmentName	formData	string	true	"Наименование светильника"
+//	@Param			equipmentImage	formData	file	true	"Изображение: jpeg, png, webp"
+//	@Param			equipmentVideo	formData	file	true	"Видео: mp4, webm"
+//	@Success		201				{object}	ds.LightingEquipmentSerializer
+//	@Failure		400				{object}	ds.StatusSerializer
+//	@Failure		401				{object}	ds.StatusSerializer
+//	@Failure		409				{object}	ds.StatusSerializer
+//	@Failure		413				{object}	ds.StatusSerializer
+//	@Security		BearerAuth
+//	@Router			/lighting-equipment [post]
 func (h *Handler) CreateLightingEquipment(ctx *gin.Context) {
-	currentUserID := getCurrentLightingUserID()
+	currentUserID := getCurrentLightingUserID(ctx)
 
 	ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxCreateRequestBytes)
 	if err := ctx.Request.ParseMultipartForm(8 << 20); err != nil {
@@ -213,6 +280,23 @@ func (h *Handler) removeLightingEquipmentMedia(ctx *gin.Context, files ...*light
 
 // PublishLightingEquipment — PUT публикации: описание и оба поля по теме обязательны.
 // Статус и дату формирования клиент не присылает — их проставляет сервер
+//
+//	@Summary		Публикация светильника
+//	@Description	Черновик → опубликован. Краткое описание и оба поля по теме обязательны,
+//	@Description	статус и дату формирования проставляет сервер.
+//	@Tags			lighting-equipment
+//	@Accept			json
+//	@Produce		json
+//	@Param			equipment_id	path		int										true	"Ид светильника"
+//	@Param			request			body		ds.PublishLightingEquipmentSerializer	true	"Поля для публикации"
+//	@Success		200				{object}	ds.LightingEquipmentSerializer
+//	@Failure		400				{object}	ds.StatusSerializer
+//	@Failure		401				{object}	ds.StatusSerializer
+//	@Failure		403				{object}	ds.StatusSerializer
+//	@Failure		404				{object}	ds.StatusSerializer
+//	@Failure		409				{object}	ds.StatusSerializer
+//	@Security		BearerAuth
+//	@Router			/lighting-equipment/{equipment_id}/publish [put]
 func (h *Handler) PublishLightingEquipment(ctx *gin.Context) {
 	equipmentID, err := parseEquipmentID(ctx)
 	if err != nil {
@@ -246,7 +330,7 @@ func (h *Handler) PublishLightingEquipment(ctx *gin.Context) {
 	powerWatt := math.Round(*request.PowerWatt*100) / 100
 
 	equipment, err := h.Repository.PublishLightingEquipment(
-		getCurrentLightingUserID(), equipmentID, shortDescription, powerWatt, *request.BeamAngleDeg,
+		getCurrentLightingUserID(ctx), equipmentID, shortDescription, powerWatt, *request.BeamAngleDeg,
 	)
 	if err != nil {
 		h.repositoryErrorHandler(ctx, err)
@@ -257,6 +341,18 @@ func (h *Handler) PublishLightingEquipment(ctx *gin.Context) {
 
 // DeleteLightingEquipment — DELETE: логическое удаление своего светильника.
 // Запись остаётся в таблице, статус меняется на "удалён"
+//
+//	@Summary		Удаление светильника
+//	@Description	Логическое удаление своего светильника: статус меняется на «удалён».
+//	@Tags			lighting-equipment
+//	@Param			equipment_id	path	int	true	"Ид светильника"
+//	@Success		204
+//	@Failure		400	{object}	ds.StatusSerializer
+//	@Failure		401	{object}	ds.StatusSerializer
+//	@Failure		403	{object}	ds.StatusSerializer
+//	@Failure		404	{object}	ds.StatusSerializer
+//	@Security		BearerAuth
+//	@Router			/lighting-equipment/{equipment_id} [delete]
 func (h *Handler) DeleteLightingEquipment(ctx *gin.Context) {
 	equipmentID, err := parseEquipmentID(ctx)
 	if err != nil {
@@ -264,7 +360,7 @@ func (h *Handler) DeleteLightingEquipment(ctx *gin.Context) {
 		return
 	}
 
-	if err = h.Repository.DeleteLightingEquipment(getCurrentLightingUserID(), equipmentID); err != nil {
+	if err = h.Repository.DeleteLightingEquipment(getCurrentLightingUserID(ctx), equipmentID); err != nil {
 		h.repositoryErrorHandler(ctx, err)
 		return
 	}
@@ -273,6 +369,20 @@ func (h *Handler) DeleteLightingEquipment(ctx *gin.Context) {
 
 // SetLightingEquipmentLike — POST лайка от текущего проектировщика:
 // поле equipmentLike = 1 ставит лайк, 0 отменяет
+//
+//	@Summary		Лайк светильника
+//	@Description	equipmentLike = 1 ставит лайк от текущего проектировщика, 0 — отменяет.
+//	@Tags			lighting-equipment
+//	@Accept			json
+//	@Produce		json
+//	@Param			equipment_id	path		int										true	"Ид светильника"
+//	@Param			request			body		ds.SetLightingEquipmentLikeSerializer	true	"1 — поставить, 0 — отменить"
+//	@Success		200				{object}	ds.LightingEquipmentLikesSerializer
+//	@Failure		400				{object}	ds.StatusSerializer
+//	@Failure		401				{object}	ds.StatusSerializer
+//	@Failure		404				{object}	ds.StatusSerializer
+//	@Security		BearerAuth
+//	@Router			/lighting-equipment/{equipment_id}/like [post]
 func (h *Handler) SetLightingEquipmentLike(ctx *gin.Context) {
 	equipmentID, err := parseEquipmentID(ctx)
 	if err != nil {
@@ -290,7 +400,7 @@ func (h *Handler) SetLightingEquipmentLike(ctx *gin.Context) {
 		return
 	}
 
-	likesTotal, err := h.Repository.SetLightingEquipmentLike(getCurrentLightingUserID(), equipmentID, *request.EquipmentLike == 1)
+	likesTotal, err := h.Repository.SetLightingEquipmentLike(getCurrentLightingUserID(ctx), equipmentID, *request.EquipmentLike == 1)
 	if err != nil {
 		h.repositoryErrorHandler(ctx, err)
 		return

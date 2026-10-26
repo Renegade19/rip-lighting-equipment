@@ -1,23 +1,29 @@
 package handler
 
-import "sync"
+import (
+	"lighting-equipment/internal/app/ds"
 
-// В лабораторной №3 авторизации ещё нет, поэтому создатель во всех методах
-// один и тот же — проектировщик с этим ид
-const fixedLightingUserID int = 1
-
-var (
-	currentLightingUserID   int
-	currentLightingUserOnce sync.Once
+	"github.com/gin-gonic/gin"
 )
 
-// getCurrentLightingUserID — функция-singleton: значение создаётся один раз
-// при первом обращении, все методы получают одного и того же проектировщика.
-// Когда в лабораторной №4 появится авторизация, изменится только эта функция,
-// а вызовы в обработчиках останутся прежними
-func getCurrentLightingUserID() int {
-	currentLightingUserOnce.Do(func() {
-		currentLightingUserID = fixedLightingUserID
-	})
-	return currentLightingUserID
+// В лабораторной №3 проектировщик был зафиксирован константой через функцию-singleton.
+// Теперь его ид берётся из JWT: middleware проверяет токен и кладёт его
+// содержимое в контекст запроса. Вызовы в обработчиках остались прежними
+
+// getCurrentLightingUserID — ид текущего проектировщика, 0 — гость
+func getCurrentLightingUserID(ctx *gin.Context) int {
+	if claims := getCurrentJWTClaims(ctx); claims != nil {
+		return claims.UserID
+	}
+	return 0
+}
+
+// getCurrentJWTClaims — содержимое токена текущего проектировщика, nil — гость
+func getCurrentJWTClaims(ctx *gin.Context) *ds.JWTClaims {
+	value, ok := ctx.Get(contextJWTClaimsKey)
+	if !ok {
+		return nil
+	}
+	claims, _ := value.(*ds.JWTClaims)
+	return claims
 }

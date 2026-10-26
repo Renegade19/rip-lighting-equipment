@@ -149,7 +149,30 @@ func NewLightingUserSerializer(user LightingUser) LightingUserSerializer {
 
 // RegisterLightingUserSerializer — тело POST регистрации
 type RegisterLightingUserSerializer struct {
-	Login    string `json:"login"`
-	Password string `json:"password"`
-	FullName string `json:"fullName"`
+	Login    string `json:"login" example:"n.fotonov"`
+	Password string `json:"password" example:"lumicalc-demo"`
+	FullName string `json:"fullName" example:"Фотонов Н. К."`
+}
+
+// LoginLightingUserSerializer — тело POST аутентификации
+type LoginLightingUserSerializer struct {
+	Login    string `json:"login" example:"a.parahnevich"`
+	Password string `json:"password" example:"lumicalc-demo"`
+}
+
+// LoginLightingUserResponseSerializer — ответ аутентификации: JWT и сам проектировщик.
+// Токен передаётся в остальных запросах заголовком Authorization: Bearer {accessToken}
+type LoginLightingUserResponseSerializer struct {
+	AccessToken string                 `json:"accessToken"`
+	TokenType   string                 `json:"tokenType" example:"Bearer"`
+	ExpiresIn   int64                  `json:"expiresIn" example:"3600"` // секунд до истечения токена
+	User        LightingUserSerializer `json:"user"`
+}
+
+// ---------- Общие ответы ----------
+
+// StatusSerializer — ответ без данных: ошибка либо подтверждение действия
+type StatusSerializer struct {
+	Status      string `json:"status" example:"error"`
+	Description string `json:"description"`
 }

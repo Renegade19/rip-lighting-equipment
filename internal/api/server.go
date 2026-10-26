@@ -1,17 +1,20 @@
 package api
 
 import (
+	"context"
+
 	"lighting-equipment/internal/app/config"
 	"lighting-equipment/internal/app/dsn"
 	"lighting-equipment/internal/app/handler"
+	"lighting-equipment/internal/app/redis"
 	"lighting-equipment/internal/app/repository"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
 
-// StartServer собирает веб-сервис: конфигурация, подключение к БД и Minio,
-// обработчики и маршруты. Страниц сервис не отдаёт — только JSON
+// StartServer собирает веб-сервис: конфигурация, подключение к БД, Minio и Redis,
+// обработчики и маршруты. Страниц сервис не отдаёт — только JSON и Swagger
 func StartServer() {
 	cfg := config.New()
 
@@ -26,7 +29,14 @@ func StartServer() {
 	if err != nil {
 		log.Fatalf("не удалось подключиться к хранилищам: %v", err)
 	}
-	h := handler.New(repo, cfg)
+
+	redisClient, err := redis.New(context.Background(), cfg.RedisAddress(), cfg.Redis.Password)
+	if err != nil {
+		log.Fatalf("не удалось подключиться к Redis: %v", err)
+	}
+	defer redisClient.Close()
+
+	h := handler.New(repo, redisClient, cfg)
 
 	r := gin.Default()
 	h.RegisterRoutes(r)

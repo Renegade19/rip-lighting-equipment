@@ -20,6 +20,7 @@ var (
 	ErrLightingEquipmentNotDraft = errors.New("опубликовать можно только светильник в статусе «черновик»")
 	ErrDraftAlreadyExists        = errors.New("у проектировщика уже есть светильник в статусе «черновик»")
 	ErrLoginAlreadyTaken         = errors.New("проектировщик с таким логином уже зарегистрирован")
+	ErrLightingUserNotFound      = errors.New("проектировщик не найден")
 )
 
 // Settings — параметры подключения к хранилищам

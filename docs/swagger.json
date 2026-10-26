@@ -1,0 +1,782 @@
+{
+    "schemes": [
+        "http"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "Веб-сервис расчёта освещённости помещения светодиодными лампами.\nУслуги — модели светильников, пользователи — проектировщики освещения.\nГостю доступно только чтение. Методы создателя требуют JWT:\nвыполните вход, нажмите Authorize и введите «Bearer {accessToken}».",
+        "title": "LumiCalc API",
+        "contact": {
+            "name": "Парахневич А."
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:3000",
+    "basePath": "/api",
+    "paths": {
+        "/lighting-equipment": {
+            "get": {
+                "description": "Опубликованные светильники с фильтром по диапазону мощности. Доступен гостю.\nС токеном у каждого светильника заполняется признак isCreatedByCurrentUser.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Список светильников",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "example": 4.5,
+                        "description": "Нижняя граница мощности, Вт",
+                        "name": "minPowerWatt",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "example": 10,
+                        "description": "Верхняя граница мощности, Вт",
+                        "name": "maxPowerWatt",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ds.LightingEquipmentTileSerializer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Название и файлы фото и видео. Файлы сохраняются в Minio,\nсветильник создаётся в статусе «черновик», создатель — из токена.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Добавление светильника",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Наименование светильника",
+                        "name": "equipmentName",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Изображение: jpeg, png, webp",
+                        "name": "equipmentImage",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Видео: mp4, webm",
+                        "name": "equipmentVideo",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-equipment/draft": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Светильник в статусе «черновик», ид не указывается: черновик не более одного.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Черновик текущего проектировщика",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-equipment/feed": {
+            "get": {
+                "description": "Первый опубликованный светильник. Доступен гостю.\nС токеном заполняется признак isLikedByCurrentUser.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Лента без ид",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentFeedSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-equipment/{equipment_id}": {
+            "get": {
+                "description": "Без ид (/feed) — первый опубликованный, /{equipment_id} — по ид,\nс ?next=true — следующий после указанного. Доступен гостю.\nС токеном заполняется признак isLikedByCurrentUser.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Лента: один светильник",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Ид светильника",
+                        "name": "equipment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Открыть следующий после указанного ид",
+                        "name": "next",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentFeedSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Логическое удаление своего светильника: статус меняется на «удалён».",
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Удаление светильника",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Ид светильника",
+                        "name": "equipment_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-equipment/{equipment_id}/like": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "equipmentLike = 1 ставит лайк от текущего проектировщика, 0 — отменяет.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Лайк светильника",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Ид светильника",
+                        "name": "equipment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "1 — поставить, 0 — отменить",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ds.SetLightingEquipmentLikeSerializer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentLikesSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-equipment/{equipment_id}/publish": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Черновик → опубликован. Краткое описание и оба поля по теме обязательны,\nстатус и дату формирования проставляет сервер.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-equipment"
+                ],
+                "summary": "Публикация светильника",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Ид светильника",
+                        "name": "equipment_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Поля для публикации",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ds.PublishLightingEquipmentSerializer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingEquipmentSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-users/login": {
+            "post": {
+                "description": "Проверяет логин и пароль и выдаёт JWT. Токен передаётся в методах создателя\nзаголовком Authorization: Bearer {accessToken}.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-users"
+                ],
+                "summary": "Аутентификация",
+                "parameters": [
+                    {
+                        "description": "Логин и пароль",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ds.LoginLightingUserSerializer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LoginLightingUserResponseSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-users/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Токен попадает в чёрный список Redis до конца срока жизни и больше не принимается.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-users"
+                ],
+                "summary": "Выход",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        },
+        "/lighting-users/register": {
+            "post": {
+                "description": "Логин 3–50 символов (латиница, цифры, . _ -), пароль от 6 символов. В БД хранится хэш bcrypt.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "lighting-users"
+                ],
+                "summary": "Регистрация проектировщика",
+                "parameters": [
+                    {
+                        "description": "Логин, пароль, ФИО",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ds.RegisterLightingUserSerializer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/ds.LightingUserSerializer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ds.StatusSerializer"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "ds.LightingEquipmentFeedSerializer": {
+            "type": "object",
+            "properties": {
+                "beamAngleDeg": {
+                    "type": "integer"
+                },
+                "creator": {
+                    "$ref": "#/definitions/ds.LightingUserSerializer"
+                },
+                "equipmentId": {
+                    "type": "integer"
+                },
+                "equipmentName": {
+                    "type": "string"
+                },
+                "formedAt": {
+                    "type": "string"
+                },
+                "imageUrl": {
+                    "type": "string"
+                },
+                "isLikedByCurrentUser": {
+                    "description": "1 — текущий проектировщик лайкнул светильник, 0 — нет",
+                    "type": "integer"
+                },
+                "likesTotal": {
+                    "type": "integer"
+                },
+                "powerWatt": {
+                    "type": "number"
+                },
+                "shortDescription": {
+                    "type": "string"
+                },
+                "videoUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "ds.LightingEquipmentLikesSerializer": {
+            "type": "object",
+            "properties": {
+                "equipmentId": {
+                    "type": "integer"
+                },
+                "isLikedByCurrentUser": {
+                    "type": "integer"
+                },
+                "likesTotal": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ds.LightingEquipmentSerializer": {
+            "type": "object",
+            "properties": {
+                "beamAngleDeg": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "creatorId": {
+                    "type": "integer"
+                },
+                "equipmentId": {
+                    "type": "integer"
+                },
+                "equipmentName": {
+                    "type": "string"
+                },
+                "equipmentStatus": {
+                    "type": "string"
+                },
+                "formedAt": {
+                    "type": "string"
+                },
+                "imageUrl": {
+                    "type": "string"
+                },
+                "powerWatt": {
+                    "type": "number"
+                },
+                "shortDescription": {
+                    "type": "string"
+                },
+                "videoUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "ds.LightingEquipmentTileSerializer": {
+            "type": "object",
+            "properties": {
+                "equipmentId": {
+                    "type": "integer"
+                },
+                "equipmentName": {
+                    "type": "string"
+                },
+                "imageUrl": {
+                    "type": "string"
+                },
+                "isCreatedByCurrentUser": {
+                    "description": "1 — светильник создан текущим проектировщиком, 0 — другим",
+                    "type": "integer"
+                },
+                "likesTotal": {
+                    "type": "integer"
+                },
+                "powerWatt": {
+                    "type": "number"
+                }
+            }
+        },
+        "ds.LightingUserSerializer": {
+            "type": "object",
+            "properties": {
+                "fullName": {
+                    "type": "string"
+                },
+                "login": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ds.LoginLightingUserResponseSerializer": {
+            "type": "object",
+            "properties": {
+                "accessToken": {
+                    "type": "string"
+                },
+                "expiresIn": {
+                    "description": "секунд до истечения токена",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "tokenType": {
+                    "type": "string",
+                    "example": "Bearer"
+                },
+                "user": {
+                    "$ref": "#/definitions/ds.LightingUserSerializer"
+                }
+            }
+        },
+        "ds.LoginLightingUserSerializer": {
+            "type": "object",
+            "properties": {
+                "login": {
+                    "type": "string",
+                    "example": "a.parahnevich"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "lumicalc-demo"
+                }
+            }
+        },
+        "ds.PublishLightingEquipmentSerializer": {
+            "type": "object",
+            "properties": {
+                "beamAngleDeg": {
+                    "type": "integer"
+                },
+                "powerWatt": {
+                    "type": "number"
+                },
+                "shortDescription": {
+                    "type": "string"
+                }
+            }
+        },
+        "ds.RegisterLightingUserSerializer": {
+            "type": "object",
+            "properties": {
+                "fullName": {
+                    "type": "string",
+                    "example": "Фотонов Н. К."
+                },
+                "login": {
+                    "type": "string",
+                    "example": "n.fotonov"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "lumicalc-demo"
+                }
+            }
+        },
+        "ds.SetLightingEquipmentLikeSerializer": {
+            "type": "object",
+            "properties": {
+                "equipmentLike": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ds.StatusSerializer": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "error"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "JWT из ответа POST /lighting-users/login в виде «Bearer {accessToken}»",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

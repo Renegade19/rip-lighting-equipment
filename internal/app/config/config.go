@@ -3,8 +3,10 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
+	log "github.com/sirupsen/logrus"
 )
 
 // Config — настройки приложения из переменных окружения (.env)
@@ -17,11 +19,33 @@ type Config struct {
 	MinioBucket    string
 	MinioAccessKey string
 	MinioSecretKey string
+
+	JWT   JWTConfig
+	Redis RedisConfig
+}
+
+// JWTConfig — ключ подписи токенов и срок их жизни
+type JWTConfig struct {
+	SecretKey string
+	ExpiresIn time.Duration
+}
+
+// RedisConfig — подключение к Redis, где хранится чёрный список токенов
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
 }
 
 func New() *Config {
 	// Файла .env может не быть — тогда берутся значения по умолчанию
 	_ = godotenv.Load()
+
+	jwtExpiresIn, err := time.ParseDuration(env("JWT_EXPIRES_IN", "1h"))
+	if err != nil || jwtExpiresIn <= 0 {
+		log.Warn("JWT_EXPIRES_IN должен быть длительностью вида 1h или 30m, используется 1h")
+		jwtExpiresIn = time.Hour
+	}
 
 	return &Config{
 		ServicePort:    env("PORT", "3000"),
@@ -31,7 +55,21 @@ func New() *Config {
 		MinioBucket:    env("MINIO_BUCKET", "lighting-equipment"),
 		MinioAccessKey: env("MINIO_ACCESS_KEY", "minioadmin"),
 		MinioSecretKey: env("MINIO_SECRET_KEY", "minioadmin"),
+		JWT: JWTConfig{
+			SecretKey: env("JWT_SECRET_KEY", "lumicalc-dev-secret"),
+			ExpiresIn: jwtExpiresIn,
+		},
+		Redis: RedisConfig{
+			Host:     env("REDIS_HOST", "localhost"),
+			Port:     env("REDIS_PORT", "6379"),
+			Password: env("REDIS_PASSWORD", ""),
+		},
 	}
+}
+
+// RedisAddress — адрес Redis в виде host:port
+func (c *Config) RedisAddress() string {
+	return c.Redis.Host + ":" + c.Redis.Port
 }
 
 // MinioAddress — адрес S3 API Minio в виде host:port, по нему сервис загружает файлы

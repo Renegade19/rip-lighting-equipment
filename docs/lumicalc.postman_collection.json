@@ -1,11 +1,130 @@
 {
   "info": {
     "_postman_id": "6581897f-0c30-462e-b2f2-218fe0e5ab5c",
-    "name": "LumiCalc — веб-сервис светильников (ЛР3)",
-    "description": "Десять методов веб-сервиса. Запросы идут в порядке показа лабораторной №3. Метод ленты представлен двумя запросами: без ид и по ид с next=true.",
+    "name": "LumiCalc — веб-сервис светильников (ЛР4)",
+    "description": "Десять методов веб-сервиса. Сначала выполните «Аутентификацию»: её тест сохраняет accessToken в переменную коллекции, методы создателя передают его заголовком Authorization: Bearer. Список и лента работают без токена. «Публикация от гостя» показывает ответ 401 без токена.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
+    {
+      "name": "Проектировщики",
+      "item": [
+        {
+          "name": "Регистрация проектировщика",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "register"
+              ]
+            },
+            "description": "В БД сохраняется хэш пароля, в ответе пароля нет.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login\": \"n.fotonov\",\n  \"password\": \"photon-2026\",\n  \"fullName\": \"Фотонов Н. К.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Аутентификация",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "login"
+              ]
+            },
+            "description": "Проверяет логин и пароль и выдаёт JWT. Тест сохраняет accessToken в переменную коллекции.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login\": \"a.parahnevich\",\n  \"password\": \"lumicalc-demo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.collectionVariables.set(\"accessToken\", pm.response.json().accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Выход",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-users/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-users",
+                "logout"
+              ]
+            },
+            "description": "Токен попадает в чёрный список Redis и больше не принимается.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "Светильники",
       "item": [
@@ -33,7 +152,10 @@
                 }
               ]
             },
-            "description": "Опубликованные светильники с мощностью от minPowerWatt до maxPowerWatt. isCreatedByCurrentUser — признак 0/1: светильник создан текущим проектировщиком."
+            "description": "Опубликованные светильники с мощностью от minPowerWatt до maxPowerWatt. isCreatedByCurrentUser — признак 0/1: светильник создан текущим проектировщиком. Доступен гостю: работает с токеном и без него.",
+            "auth": {
+              "type": "noauth"
+            }
           },
           "response": []
         },
@@ -71,6 +193,16 @@
                   "src": []
                 }
               ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "response": [],
@@ -104,7 +236,54 @@
                 "draft"
               ]
             },
-            "description": "Ид не указывается: черновик у проектировщика не более одного."
+            "description": "Ид не указывается: черновик у проектировщика не более одного.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Публикация от гостя (401)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/lighting-equipment/{{draftEquipmentId}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "lighting-equipment",
+                "{{draftEquipmentId}}",
+                "publish"
+              ]
+            },
+            "description": "Тот же PUT без заголовка Authorization: сервер отвечает 401.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shortDescription\": \"Светодиодная лампа для общего освещения жилых помещений, тёплый белый свет.\",\n  \"powerWatt\": 8.5,\n  \"beamAngleDeg\": 200\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
           },
           "response": []
         },
@@ -138,6 +317,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "response": []
@@ -157,7 +346,10 @@
                 "feed"
               ]
             },
-            "description": "Первый опубликованный светильник. isLikedByCurrentUser — признак 0/1: текущий проектировщик лайкнул светильник."
+            "description": "Первый опубликованный светильник. isLikedByCurrentUser — признак 0/1: текущий проектировщик лайкнул светильник. Доступен гостю: работает с токеном и без него.",
+            "auth": {
+              "type": "noauth"
+            }
           },
           "response": []
         },
@@ -182,7 +374,10 @@
                 }
               ]
             },
-            "description": "С параметром next=true отдаётся следующий опубликованный светильник после указанного ид."
+            "description": "С параметром next=true отдаётся следующий опубликованный светильник после указанного ид. Доступен гостю: работает с токеном и без него.",
+            "auth": {
+              "type": "noauth"
+            }
           },
           "response": []
         },
@@ -216,6 +411,16 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "response": []
@@ -235,83 +440,17 @@
                 "{{draftEquipmentId}}"
               ]
             },
-            "description": "Логическое удаление: статус меняется на «удалён». Удалить можно только свой светильник."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Проектировщики",
-      "item": [
-        {
-          "name": "Регистрация проектировщика",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/lighting-users/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "lighting-users",
-                "register"
-              ]
-            },
-            "description": "В БД сохраняется хэш пароля, в ответе пароля нет.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"login\": \"n.fotonov\",\n  \"password\": \"photon-2026\",\n  \"fullName\": \"Фотонов Н. К.\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+            "description": "Логическое удаление: статус меняется на «удалён». Удалить можно только свой светильник.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
                 }
-              }
+              ]
             }
-          },
-          "response": []
-        },
-        {
-          "name": "Аутентификация (заглушка)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/lighting-users/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "lighting-users",
-                "login"
-              ]
-            },
-            "description": "Заглушка до лабораторной №4: отвечает 501."
-          },
-          "response": []
-        },
-        {
-          "name": "Деавторизация (заглушка)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/lighting-users/logout",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "lighting-users",
-                "logout"
-              ]
-            },
-            "description": "Заглушка до лабораторной №4: отвечает 501."
           },
           "response": []
         }
@@ -326,6 +465,10 @@
     {
       "key": "draftEquipmentId",
       "value": "7"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
     }
   ]
 }

@@ -1,0 +1,531 @@
+basePath: /api
+definitions:
+  ds.LightingEquipmentFeedSerializer:
+    properties:
+      beamAngleDeg:
+        type: integer
+      creator:
+        $ref: '#/definitions/ds.LightingUserSerializer'
+      equipmentId:
+        type: integer
+      equipmentName:
+        type: string
+      formedAt:
+        type: string
+      imageUrl:
+        type: string
+      isLikedByCurrentUser:
+        description: 1 — текущий проектировщик лайкнул светильник, 0 — нет
+        type: integer
+      likesTotal:
+        type: integer
+      powerWatt:
+        type: number
+      shortDescription:
+        type: string
+      videoUrl:
+        type: string
+    type: object
+  ds.LightingEquipmentLikesSerializer:
+    properties:
+      equipmentId:
+        type: integer
+      isLikedByCurrentUser:
+        type: integer
+      likesTotal:
+        type: integer
+    type: object
+  ds.LightingEquipmentSerializer:
+    properties:
+      beamAngleDeg:
+        type: integer
+      createdAt:
+        type: string
+      creatorId:
+        type: integer
+      equipmentId:
+        type: integer
+      equipmentName:
+        type: string
+      equipmentStatus:
+        type: string
+      formedAt:
+        type: string
+      imageUrl:
+        type: string
+      powerWatt:
+        type: number
+      shortDescription:
+        type: string
+      videoUrl:
+        type: string
+    type: object
+  ds.LightingEquipmentTileSerializer:
+    properties:
+      equipmentId:
+        type: integer
+      equipmentName:
+        type: string
+      imageUrl:
+        type: string
+      isCreatedByCurrentUser:
+        description: 1 — светильник создан текущим проектировщиком, 0 — другим
+        type: integer
+      likesTotal:
+        type: integer
+      powerWatt:
+        type: number
+    type: object
+  ds.LightingUserSerializer:
+    properties:
+      fullName:
+        type: string
+      login:
+        type: string
+      userId:
+        type: integer
+    type: object
+  ds.LoginLightingUserResponseSerializer:
+    properties:
+      accessToken:
+        type: string
+      expiresIn:
+        description: секунд до истечения токена
+        example: 3600
+        type: integer
+      tokenType:
+        example: Bearer
+        type: string
+      user:
+        $ref: '#/definitions/ds.LightingUserSerializer'
+    type: object
+  ds.LoginLightingUserSerializer:
+    properties:
+      login:
+        example: a.parahnevich
+        type: string
+      password:
+        example: lumicalc-demo
+        type: string
+    type: object
+  ds.PublishLightingEquipmentSerializer:
+    properties:
+      beamAngleDeg:
+        type: integer
+      powerWatt:
+        type: number
+      shortDescription:
+        type: string
+    type: object
+  ds.RegisterLightingUserSerializer:
+    properties:
+      fullName:
+        example: Фотонов Н. К.
+        type: string
+      login:
+        example: n.fotonov
+        type: string
+      password:
+        example: lumicalc-demo
+        type: string
+    type: object
+  ds.SetLightingEquipmentLikeSerializer:
+    properties:
+      equipmentLike:
+        type: integer
+    type: object
+  ds.StatusSerializer:
+    properties:
+      description:
+        type: string
+      status:
+        example: error
+        type: string
+    type: object
+host: localhost:3000
+info:
+  contact:
+    name: Парахневич А.
+  description: |-
+    Веб-сервис расчёта освещённости помещения светодиодными лампами.
+    Услуги — модели светильников, пользователи — проектировщики освещения.
+    Гостю доступно только чтение. Методы создателя требуют JWT:
+    выполните вход, нажмите Authorize и введите «Bearer {accessToken}».
+  title: LumiCalc API
+  version: "1.0"
+paths:
+  /lighting-equipment:
+    get:
+      description: |-
+        Опубликованные светильники с фильтром по диапазону мощности. Доступен гостю.
+        С токеном у каждого светильника заполняется признак isCreatedByCurrentUser.
+      parameters:
+      - description: Нижняя граница мощности, Вт
+        example: 4.5
+        in: query
+        name: minPowerWatt
+        type: number
+      - description: Верхняя граница мощности, Вт
+        example: 10
+        in: query
+        name: maxPowerWatt
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ds.LightingEquipmentTileSerializer'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      summary: Список светильников
+      tags:
+      - lighting-equipment
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Название и файлы фото и видео. Файлы сохраняются в Minio,
+        светильник создаётся в статусе «черновик», создатель — из токена.
+      parameters:
+      - description: Наименование светильника
+        in: formData
+        name: equipmentName
+        required: true
+        type: string
+      - description: 'Изображение: jpeg, png, webp'
+        in: formData
+        name: equipmentImage
+        required: true
+        type: file
+      - description: 'Видео: mp4, webm'
+        in: formData
+        name: equipmentVideo
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Добавление светильника
+      tags:
+      - lighting-equipment
+  /lighting-equipment/{equipment_id}:
+    delete:
+      description: 'Логическое удаление своего светильника: статус меняется на «удалён».'
+      parameters:
+      - description: Ид светильника
+        in: path
+        name: equipment_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Удаление светильника
+      tags:
+      - lighting-equipment
+    get:
+      description: |-
+        Без ид (/feed) — первый опубликованный, /{equipment_id} — по ид,
+        с ?next=true — следующий после указанного. Доступен гостю.
+        С токеном заполняется признак isLikedByCurrentUser.
+      parameters:
+      - description: Ид светильника
+        in: path
+        name: equipment_id
+        required: true
+        type: integer
+      - description: Открыть следующий после указанного ид
+        in: query
+        name: next
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentFeedSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      summary: 'Лента: один светильник'
+      tags:
+      - lighting-equipment
+  /lighting-equipment/{equipment_id}/like:
+    post:
+      consumes:
+      - application/json
+      description: equipmentLike = 1 ставит лайк от текущего проектировщика, 0 — отменяет.
+      parameters:
+      - description: Ид светильника
+        in: path
+        name: equipment_id
+        required: true
+        type: integer
+      - description: 1 — поставить, 0 — отменить
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ds.SetLightingEquipmentLikeSerializer'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentLikesSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Лайк светильника
+      tags:
+      - lighting-equipment
+  /lighting-equipment/{equipment_id}/publish:
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Черновик → опубликован. Краткое описание и оба поля по теме обязательны,
+        статус и дату формирования проставляет сервер.
+      parameters:
+      - description: Ид светильника
+        in: path
+        name: equipment_id
+        required: true
+        type: integer
+      - description: Поля для публикации
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ds.PublishLightingEquipmentSerializer'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Публикация светильника
+      tags:
+      - lighting-equipment
+  /lighting-equipment/draft:
+    get:
+      description: 'Светильник в статусе «черновик», ид не указывается: черновик не
+        более одного.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Черновик текущего проектировщика
+      tags:
+      - lighting-equipment
+  /lighting-equipment/feed:
+    get:
+      description: |-
+        Первый опубликованный светильник. Доступен гостю.
+        С токеном заполняется признак isLikedByCurrentUser.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LightingEquipmentFeedSerializer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      summary: Лента без ид
+      tags:
+      - lighting-equipment
+  /lighting-users/login:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Проверяет логин и пароль и выдаёт JWT. Токен передаётся в методах создателя
+        заголовком Authorization: Bearer {accessToken}.
+      parameters:
+      - description: Логин и пароль
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ds.LoginLightingUserSerializer'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.LoginLightingUserResponseSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      summary: Аутентификация
+      tags:
+      - lighting-users
+  /lighting-users/logout:
+    post:
+      description: Токен попадает в чёрный список Redis до конца срока жизни и больше
+        не принимается.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      security:
+      - BearerAuth: []
+      summary: Выход
+      tags:
+      - lighting-users
+  /lighting-users/register:
+    post:
+      consumes:
+      - application/json
+      description: Логин 3–50 символов (латиница, цифры, . _ -), пароль от 6 символов.
+        В БД хранится хэш bcrypt.
+      parameters:
+      - description: Логин, пароль, ФИО
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ds.RegisterLightingUserSerializer'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/ds.LightingUserSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
+      summary: Регистрация проектировщика
+      tags:
+      - lighting-users
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: JWT из ответа POST /lighting-users/login в виде «Bearer {accessToken}»
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

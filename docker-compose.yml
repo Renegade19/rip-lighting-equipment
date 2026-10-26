@@ -70,6 +70,23 @@ services:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: pepa-linha
 
+  # Redis: чёрный список JWT вышедших проектировщиков (logout).
+  # appendonly — список переживает перезапуск контейнера
+  redis:
+    image: redis:7-alpine
+    container_name: lighting-equipment-go-redis
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   minio-data:
   postgres-data:
+  redis-data:
