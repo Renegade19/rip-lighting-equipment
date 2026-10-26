@@ -40,18 +40,13 @@ func (c *Config) MinioAddress() string {
 }
 
 // MediaURL собирает публичный адрес файла в Minio по его имени из БД.
-// В БД хранится только имя файла, адрес для клиента собирается при ответе.
-// Если файла нет (nil или пустое имя), адреса тоже нет
-func (c *Config) MediaURL(fileName *string) *string {
-	if fileName == nil || *fileName == "" {
-		return nil
-	}
+// В БД хранится только имя файла, адрес для клиента собирается при ответе
+func (c *Config) MediaURL(fileName string) string {
 	protocol := "http"
 	if c.MinioUseSSL {
 		protocol = "https"
 	}
-	url := fmt.Sprintf("%s://%s:%s/%s/%s", protocol, c.MinioEndpoint, c.MinioPort, c.MinioBucket, *fileName)
-	return &url
+	return fmt.Sprintf("%s://%s:%s/%s/%s", protocol, c.MinioEndpoint, c.MinioPort, c.MinioBucket, fileName)
 }
 
 func env(key, fallback string) string {

@@ -16,9 +16,10 @@ type LightingEquipment struct {
 	EquipmentName    string  `gorm:"column:equipment_name;type:varchar(150);not null"`
 	ShortDescription *string `gorm:"column:short_description;type:varchar(500)"`
 	EquipmentStatus  string  `gorm:"column:equipment_status;type:lighting_equipment_status;not null;default:'черновик'"`
-	// Имена файлов в бакете Minio (сами файлы хранятся в Minio)
-	ImageName *string `gorm:"column:image_name;type:varchar(255)"`
-	VideoName *string `gorm:"column:video_name;type:varchar(255)"`
+	// Имена файлов в бакете Minio (сами файлы хранятся в Minio).
+	// Обязательные: фото и видео задаются при создании, по кнопке «Далее»
+	ImageName string `gorm:"column:image_name;type:varchar(255);not null"`
+	VideoName string `gorm:"column:video_name;type:varchar(255);not null"`
 
 	// Поля по предметной области
 	PowerWatt    *float64 `gorm:"column:power_watt;type:numeric(6,2)"`

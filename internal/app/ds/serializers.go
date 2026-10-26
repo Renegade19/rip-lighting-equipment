@@ -9,7 +9,7 @@ import "time"
 // поэтому изменить их с клиента нельзя
 
 // MediaURLFunc собирает публичный адрес файла в Minio по имени файла из БД
-type MediaURLFunc func(fileName *string) *string
+type MediaURLFunc func(fileName string) string
 
 // Формат дат в ответах: местное время сервера, как оно хранится в столбцах timestamp
 const timestampLayout = "2006-01-02T15:04:05"
@@ -28,7 +28,7 @@ func formatTimestamp(value *time.Time) *string {
 type LightingEquipmentTileSerializer struct {
 	EquipmentID   int      `json:"equipmentId"`
 	EquipmentName string   `json:"equipmentName"`
-	ImageURL      *string  `json:"imageUrl"`
+	ImageURL      string   `json:"imageUrl"`
 	PowerWatt     *float64 `json:"powerWatt"`
 	LikesTotal    int64    `json:"likesTotal"`
 	// 1 — светильник создан текущим проектировщиком, 0 — другим
@@ -52,8 +52,8 @@ type LightingEquipmentFeedSerializer struct {
 	EquipmentID      int                    `json:"equipmentId"`
 	EquipmentName    string                 `json:"equipmentName"`
 	ShortDescription *string                `json:"shortDescription"`
-	ImageURL         *string                `json:"imageUrl"`
-	VideoURL         *string                `json:"videoUrl"`
+	ImageURL         string                 `json:"imageUrl"`
+	VideoURL         string                 `json:"videoUrl"`
 	PowerWatt        *float64               `json:"powerWatt"`
 	BeamAngleDeg     *int                   `json:"beamAngleDeg"`
 	FormedAt         *string                `json:"formedAt"`
@@ -86,8 +86,8 @@ type LightingEquipmentSerializer struct {
 	EquipmentName    string   `json:"equipmentName"`
 	ShortDescription *string  `json:"shortDescription"`
 	EquipmentStatus  string   `json:"equipmentStatus"`
-	ImageURL         *string  `json:"imageUrl"`
-	VideoURL         *string  `json:"videoUrl"`
+	ImageURL         string   `json:"imageUrl"`
+	VideoURL         string   `json:"videoUrl"`
 	PowerWatt        *float64 `json:"powerWatt"`
 	BeamAngleDeg     *int     `json:"beamAngleDeg"`
 	CreatedAt        *string  `json:"createdAt"`
