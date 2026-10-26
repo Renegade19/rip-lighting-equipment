@@ -38,9 +38,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	{
 		// Список опубликованных с фильтром: ?minPowerWatt=4.5&maxPowerWatt=10
 		lightingEquipment.GET("", h.GetLightingEquipmentList)
-		// Лента: без ид — первый опубликованный, /3 — по ид, /3?next=true — следующий
+		// Лента — один метод: без параметров — первый опубликованный,
+		// ?equipmentId=3 — по ид, ?equipmentId=3&next=true — следующий после него
 		lightingEquipment.GET("/feed", h.GetLightingEquipmentFeed)
-		lightingEquipment.GET("/:equipment_id", h.GetLightingEquipmentFeed)
 		// Черновик текущего проектировщика, ид не указывается
 		lightingEquipment.GET("/draft", h.GetLightingEquipmentDraft)
 		// Добавление: название + файлы фото и видео (multipart/form-data)

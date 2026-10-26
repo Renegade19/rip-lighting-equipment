@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "6581897f-0c30-462e-b2f2-218fe0e5ab5c",
     "name": "LumiCalc — веб-сервис светильников (ЛР3)",
-    "description": "Десять методов веб-сервиса. Запросы идут в порядке показа лабораторной №3. Метод ленты представлен двумя запросами: без ид и по ид с next=true.",
+    "description": "Десять методов веб-сервиса — десять запросов. Запросы идут в порядке показа лабораторной №3. Лента — один запрос: без параметров отдаёт первый опубликованный светильник, с equipmentId — светильник по ид, с equipmentId и next=true — следующий после него (параметры включаются галочками на вкладке Params).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -143,7 +143,7 @@
           "response": []
         },
         {
-          "name": "Лента без ид",
+          "name": "Лента",
           "request": {
             "method": "GET",
             "header": [],
@@ -155,34 +155,23 @@
               "path": [
                 "lighting-equipment",
                 "feed"
-              ]
-            },
-            "description": "Первый опубликованный светильник. isLikedByCurrentUser — признак 0/1: текущий проектировщик лайкнул светильник."
-          },
-          "response": []
-        },
-        {
-          "name": "Лента по ид, следующий",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/lighting-equipment/1?next=true",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "lighting-equipment",
-                "1"
               ],
               "query": [
                 {
+                  "key": "equipmentId",
+                  "value": "1",
+                  "description": "ид светильника; без него — первый опубликованный",
+                  "disabled": true
+                },
+                {
                   "key": "next",
-                  "value": "true"
+                  "value": "true",
+                  "description": "true — следующий после equipmentId",
+                  "disabled": true
                 }
               ]
             },
-            "description": "С параметром next=true отдаётся следующий опубликованный светильник после указанного ид."
+            "description": "Один метод ленты. Без параметров — первый опубликованный светильник (вкладка «Лента» в меню). ?equipmentId=1 — светильник по ид, ?equipmentId=1&next=true — следующий после него. isLikedByCurrentUser — признак 0/1: текущий проектировщик лайкнул светильник."
           },
           "response": []
         },

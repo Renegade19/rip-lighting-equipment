@@ -8,6 +8,9 @@ import "time"
 // Системных полей (ид, статус, создатель, даты) в сериализаторах запросов нет,
 // поэтому изменить их с клиента нельзя
 
+// MediaURLFunc собирает публичный адрес файла в Minio по имени файла из БД
+type MediaURLFunc func(fileName *string) *string
+
 // Формат дат в ответах: местное время сервера, как оно хранится в столбцах timestamp
 const timestampLayout = "2006-01-02T15:04:05"
 
@@ -32,11 +35,11 @@ type LightingEquipmentTileSerializer struct {
 	IsCreatedByCurrentUser int `json:"isCreatedByCurrentUser"`
 }
 
-func NewLightingEquipmentTileSerializer(equipment LightingEquipmentWithLikes) LightingEquipmentTileSerializer {
+func NewLightingEquipmentTileSerializer(equipment LightingEquipmentWithLikes, mediaURL MediaURLFunc) LightingEquipmentTileSerializer {
 	return LightingEquipmentTileSerializer{
 		EquipmentID:            equipment.EquipmentID,
 		EquipmentName:          equipment.EquipmentName,
-		ImageURL:               equipment.ImageURL,
+		ImageURL:               mediaURL(equipment.ImageName),
 		PowerWatt:              equipment.PowerWatt,
 		LikesTotal:             equipment.LikesTotal,
 		IsCreatedByCurrentUser: equipment.IsCreatedByCurrentUser,
@@ -60,13 +63,13 @@ type LightingEquipmentFeedSerializer struct {
 	IsLikedByCurrentUser int `json:"isLikedByCurrentUser"`
 }
 
-func NewLightingEquipmentFeedSerializer(equipment LightingEquipmentWithLikes) LightingEquipmentFeedSerializer {
+func NewLightingEquipmentFeedSerializer(equipment LightingEquipmentWithLikes, mediaURL MediaURLFunc) LightingEquipmentFeedSerializer {
 	return LightingEquipmentFeedSerializer{
 		EquipmentID:          equipment.EquipmentID,
 		EquipmentName:        equipment.EquipmentName,
 		ShortDescription:     equipment.ShortDescription,
-		ImageURL:             equipment.ImageURL,
-		VideoURL:             equipment.VideoURL,
+		ImageURL:             mediaURL(equipment.ImageName),
+		VideoURL:             mediaURL(equipment.VideoName),
 		PowerWatt:            equipment.PowerWatt,
 		BeamAngleDeg:         equipment.BeamAngleDeg,
 		FormedAt:             formatTimestamp(equipment.FormedAt),
@@ -92,14 +95,14 @@ type LightingEquipmentSerializer struct {
 	CreatorID        int      `json:"creatorId"`
 }
 
-func NewLightingEquipmentSerializer(equipment LightingEquipment) LightingEquipmentSerializer {
+func NewLightingEquipmentSerializer(equipment LightingEquipment, mediaURL MediaURLFunc) LightingEquipmentSerializer {
 	return LightingEquipmentSerializer{
 		EquipmentID:      equipment.EquipmentID,
 		EquipmentName:    equipment.EquipmentName,
 		ShortDescription: equipment.ShortDescription,
 		EquipmentStatus:  equipment.EquipmentStatus,
-		ImageURL:         equipment.ImageURL,
-		VideoURL:         equipment.VideoURL,
+		ImageURL:         mediaURL(equipment.ImageName),
+		VideoURL:         mediaURL(equipment.VideoName),
 		PowerWatt:        equipment.PowerWatt,
 		BeamAngleDeg:     equipment.BeamAngleDeg,
 		CreatedAt:        formatTimestamp(&equipment.CreatedAt),

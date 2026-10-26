@@ -71,27 +71,30 @@ func (h *Handler) GetLightingEquipmentList(ctx *gin.Context) {
 
 	tiles := make([]ds.LightingEquipmentTileSerializer, 0, len(lightingEquipment))
 	for _, equipment := range lightingEquipment {
-		tiles = append(tiles, ds.NewLightingEquipmentTileSerializer(equipment))
+		tiles = append(tiles, ds.NewLightingEquipmentTileSerializer(equipment, h.Config.MediaURL))
 	}
 	ctx.JSON(http.StatusOK, tiles)
 }
 
 // GetLightingEquipmentFeed — GET ленты: один опубликованный светильник
 // с признаком 0/1, лайкнул ли его текущий проектировщик.
-// Без ид отдаётся первый, с ?next=true — следующий после указанного ид
+// Один метод, оба параметра необязательны:
+//   - без параметров — первый опубликованный (вкладка «Лента» в меню, ид ещё неизвестен);
+//   - ?equipmentId=3 — светильник с этим ид;
+//   - ?equipmentId=3&next=true — следующий опубликованный после этого ид
 func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 	equipmentID := 0
 	next := ctx.Query("next") == "true"
 
-	if ctx.Param("equipment_id") != "" {
-		id, err := parseEquipmentID(ctx)
-		if err != nil {
-			h.errorHandler(ctx, http.StatusBadRequest, err)
+	if raw := strings.TrimSpace(ctx.Query("equipmentId")); raw != "" {
+		id, err := strconv.Atoi(raw)
+		if err != nil || id <= 0 {
+			h.errorHandler(ctx, http.StatusBadRequest, errInvalidEquipmentID)
 			return
 		}
 		equipmentID = id
 	} else {
-		// Лента без ид: следующий после нуля — первый опубликованный
+		// Ид не указан: следующий после нуля — первый опубликованный
 		next = true
 	}
 
@@ -100,7 +103,7 @@ func (h *Handler) GetLightingEquipmentFeed(ctx *gin.Context) {
 		h.repositoryErrorHandler(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentFeedSerializer(*equipment))
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentFeedSerializer(*equipment, h.Config.MediaURL))
 }
 
 // GetLightingEquipmentDraft — GET черновика текущего проектировщика.
@@ -115,12 +118,12 @@ func (h *Handler) GetLightingEquipmentDraft(ctx *gin.Context) {
 		h.repositoryErrorHandler(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*draft))
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*draft, h.Config.MediaURL))
 }
 
 // CreateLightingEquipment — POST добавления: название и два файла (multipart/form-data).
 // Файлы сохраняются в Minio под сгенерированными именами на латинице,
-// в БД записываются адреса этих файлов. Светильник создаётся в статусе "черновик"
+// в БД записываются имена этих файлов. Светильник создаётся в статусе "черновик"
 func (h *Handler) CreateLightingEquipment(ctx *gin.Context) {
 	currentUserID := getCurrentLightingUserID()
 
@@ -188,8 +191,8 @@ func (h *Handler) CreateLightingEquipment(ctx *gin.Context) {
 	draft, err := h.Repository.CreateDraftLightingEquipment(
 		currentUserID,
 		equipmentName,
-		h.Config.ImageURL(image.fileName),
-		h.Config.VideoURL(video.fileName),
+		image.fileName,
+		video.fileName,
 	)
 	if err != nil {
 		// Запись в БД не создана — загруженные файлы больше не нужны
@@ -198,8 +201,9 @@ func (h *Handler) CreateLightingEquipment(ctx *gin.Context) {
 		return
 	}
 
-	ctx.Header("Location", fmt.Sprintf("/api/lighting-equipment/%d", draft.EquipmentID))
-	ctx.JSON(http.StatusCreated, ds.NewLightingEquipmentSerializer(*draft))
+	// Новый светильник — черновик, он доступен методом получения черновика
+	ctx.Header("Location", "/api/lighting-equipment/draft")
+	ctx.JSON(http.StatusCreated, ds.NewLightingEquipmentSerializer(*draft, h.Config.MediaURL))
 }
 
 // Удаляет из Minio файлы, для которых не получилось создать запись в БД
@@ -252,7 +256,7 @@ func (h *Handler) PublishLightingEquipment(ctx *gin.Context) {
 		h.repositoryErrorHandler(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*equipment))
+	ctx.JSON(http.StatusOK, ds.NewLightingEquipmentSerializer(*equipment, h.Config.MediaURL))
 }
 
 // DeleteLightingEquipment — DELETE: логическое удаление своего светильника.
