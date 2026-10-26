@@ -67,15 +67,18 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer, Redis
 |---|---|---|---|
 | `equipment_id` | serial | PK | идентификатор |
 | `equipment_name` | varchar(150) | | наименование модели |
-| `short_description` | varchar(500) | | краткое описание |
+| `short_description` | varchar(500) | N | краткое описание (заполняется при публикации) |
 | `equipment_status` | enum | | черновик / опубликован / удалён |
-| `image_name` | varchar(255) | | имя файла изображения в бакете Minio |
-| `video_name` | varchar(255) | | имя файла видео в бакете Minio |
-| `power_watt` | numeric(6,2) | | **поле по теме:** мощность, Вт |
-| `beam_angle_deg` | integer | | **поле по теме:** угол рассеивания, ° |
+| `image_name` | varchar(255) | | имя файла изображения в бакете Minio (задаётся при создании) |
+| `video_name` | varchar(255) | | имя файла видео в бакете Minio (задаётся при создании) |
+| `power_watt` | numeric(6,2) | N | **поле по теме:** мощность, Вт (заполняется при публикации) |
+| `beam_angle_deg` | integer | N | **поле по теме:** угол рассеивания, ° (заполняется при публикации) |
 | `created_at` | timestamp | | дата создания |
-| `formed_at` | timestamp | | дата формирования (проставляется при публикации) |
+| `formed_at` | timestamp | N | дата формирования (проставляется при публикации) |
 | `creator_id` | integer | FK → `lighting_users` | создатель |
+
+`N` — необязательное поле (NULL). Таких полей четыре: их заполняет публикация.
+Название, фото и видео задаются при создании, по кнопке «Далее», поэтому обязательные.
 
 У проектировщика не более одного светильника в статусе «черновик» —
 частичный уникальный индекс `uq_draft_per_creator`.
@@ -156,7 +159,7 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer, Redis
   "equipmentName": "Vintage 1906 Big Oval 10 Filament Magnetic 4W 818 Smoke E27",
   "shortDescription": "Большая овальная филаментная лампа с дымчатой колбой.",
   "imageUrl": "http://localhost:9000/lighting-equipment/vintage-1906-big-oval-10-smoke-e27.jpg",
-  "videoUrl": null,
+  "videoUrl": "http://localhost:9000/lighting-equipment/smart-matter-classic-a.mp4",
   "powerWatt": 4,
   "beamAngleDeg": 320,
   "formedAt": "2026-02-03T11:20:00",

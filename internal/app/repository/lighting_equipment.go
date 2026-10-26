@@ -106,8 +106,8 @@ func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, 
 	draft := ds.LightingEquipment{
 		EquipmentName:   equipmentName,
 		EquipmentStatus: ds.LightingEquipmentStatusDraft,
-		ImageName:       &imageName,
-		VideoName:       &videoName,
+		ImageName:       imageName,
+		VideoName:       videoName,
 		CreatedAt:       time.Now(),
 		CreatorID:       creatorID,
 	}
