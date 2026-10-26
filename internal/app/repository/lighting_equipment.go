@@ -102,12 +102,12 @@ func (r *Repository) GetDraftLightingEquipment(creatorID int) (*ds.LightingEquip
 // 4. POST добавления: создаёт светильник в статусе "черновик".
 // Системные поля (статус, создатель, дата создания) проставляет сервер.
 // Второй черновик не даёт создать частичный уникальный индекс uq_draft_per_creator
-func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, imageURL, videoURL string) (*ds.LightingEquipment, error) {
+func (r *Repository) CreateDraftLightingEquipment(creatorID int, equipmentName, imageName, videoName string) (*ds.LightingEquipment, error) {
 	draft := ds.LightingEquipment{
 		EquipmentName:   equipmentName,
 		EquipmentStatus: ds.LightingEquipmentStatusDraft,
-		ImageURL:        &imageURL,
-		VideoURL:        &videoURL,
+		ImageName:       &imageName,
+		VideoName:       &videoName,
 		CreatedAt:       time.Now(),
 		CreatorID:       creatorID,
 	}

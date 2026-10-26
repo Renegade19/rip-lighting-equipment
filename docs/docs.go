@@ -174,33 +174,7 @@ const docTemplate = `{
         },
         "/lighting-equipment/feed": {
             "get": {
-                "description": "Первый опубликованный светильник. Доступен гостю.\nС токеном заполняется признак isLikedByCurrentUser.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "lighting-equipment"
-                ],
-                "summary": "Лента без ид",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/ds.LightingEquipmentFeedSerializer"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/ds.StatusSerializer"
-                        }
-                    }
-                }
-            }
-        },
-        "/lighting-equipment/{equipment_id}": {
-            "get": {
-                "description": "Без ид (/feed) — первый опубликованный, /{equipment_id} — по ид,\nс ?next=true — следующий после указанного. Доступен гостю.\nС токеном заполняется признак isLikedByCurrentUser.",
+                "description": "Один метод, оба параметра необязательны. Без параметров — первый\nопубликованный, ?equipmentId=3 — по ид, ?equipmentId=3\u0026next=true —\nследующий после указанного. Доступен гостю.\nС токеном заполняется признак isLikedByCurrentUser.",
                 "produces": [
                     "application/json"
                 ],
@@ -211,14 +185,13 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Ид светильника",
-                        "name": "equipment_id",
-                        "in": "path",
-                        "required": true
+                        "description": "Ид светильника; без него — первый опубликованный",
+                        "name": "equipmentId",
+                        "in": "query"
                     },
                     {
                         "type": "boolean",
-                        "description": "Открыть следующий после указанного ид",
+                        "description": "true — следующий после equipmentId",
                         "name": "next",
                         "in": "query"
                     }
@@ -243,7 +216,9 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/lighting-equipment/{equipment_id}": {
             "delete": {
                 "security": [
                     {

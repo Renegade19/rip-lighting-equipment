@@ -269,39 +269,6 @@ paths:
       summary: Удаление светильника
       tags:
       - lighting-equipment
-    get:
-      description: |-
-        Без ид (/feed) — первый опубликованный, /{equipment_id} — по ид,
-        с ?next=true — следующий после указанного. Доступен гостю.
-        С токеном заполняется признак isLikedByCurrentUser.
-      parameters:
-      - description: Ид светильника
-        in: path
-        name: equipment_id
-        required: true
-        type: integer
-      - description: Открыть следующий после указанного ид
-        in: query
-        name: next
-        type: boolean
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/ds.LightingEquipmentFeedSerializer'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ds.StatusSerializer'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/ds.StatusSerializer'
-      summary: 'Лента: один светильник'
-      tags:
-      - lighting-equipment
   /lighting-equipment/{equipment_id}/like:
     post:
       consumes:
@@ -421,8 +388,19 @@ paths:
   /lighting-equipment/feed:
     get:
       description: |-
-        Первый опубликованный светильник. Доступен гостю.
+        Один метод, оба параметра необязательны. Без параметров — первый
+        опубликованный, ?equipmentId=3 — по ид, ?equipmentId=3&next=true —
+        следующий после указанного. Доступен гостю.
         С токеном заполняется признак isLikedByCurrentUser.
+      parameters:
+      - description: Ид светильника; без него — первый опубликованный
+        in: query
+        name: equipmentId
+        type: integer
+      - description: true — следующий после equipmentId
+        in: query
+        name: next
+        type: boolean
       produces:
       - application/json
       responses:
@@ -430,11 +408,15 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/ds.LightingEquipmentFeedSerializer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ds.StatusSerializer'
         "404":
           description: Not Found
           schema:
             $ref: '#/definitions/ds.StatusSerializer'
-      summary: Лента без ид
+      summary: 'Лента: один светильник'
       tags:
       - lighting-equipment
   /lighting-users/login:

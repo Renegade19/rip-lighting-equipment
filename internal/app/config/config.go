@@ -77,25 +77,19 @@ func (c *Config) MinioAddress() string {
 	return c.MinioEndpoint + ":" + c.MinioPort
 }
 
-// ImageURL собирает публичный адрес изображения в Minio из ключа объекта
-func (c *Config) ImageURL(imageKey string) string {
-	return c.objectURL(imageKey)
-}
-
-// VideoURL собирает публичный адрес видео в Minio из ключа объекта
-func (c *Config) VideoURL(videoKey string) string {
-	return c.objectURL(videoKey)
-}
-
-func (c *Config) objectURL(objectKey string) string {
-	if objectKey == "" {
-		return ""
+// MediaURL собирает публичный адрес файла в Minio по его имени из БД.
+// В БД хранится только имя файла, адрес для клиента собирается при ответе.
+// Если файла нет (nil или пустое имя), адреса тоже нет
+func (c *Config) MediaURL(fileName *string) *string {
+	if fileName == nil || *fileName == "" {
+		return nil
 	}
 	protocol := "http"
 	if c.MinioUseSSL {
 		protocol = "https"
 	}
-	return fmt.Sprintf("%s://%s:%s/%s/%s", protocol, c.MinioEndpoint, c.MinioPort, c.MinioBucket, objectKey)
+	url := fmt.Sprintf("%s://%s:%s/%s/%s", protocol, c.MinioEndpoint, c.MinioPort, c.MinioBucket, *fileName)
+	return &url
 }
 
 func env(key, fallback string) string {
