@@ -37,7 +37,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.POST("/lighting-equipment/draft", h.CreateLightingEquipmentDraft)
 	// Кнопка "Опубликовать": смена статуса (ORM)
 	r.POST("/lighting-equipment/publish", h.PublishLightingEquipmentDraft)
-	// Кнопка "Удалить" на плитке: логическое удаление (SQL-курсор, без ORM)
+	// Кнопка "Удалить" на плитке: логическое удаление (SQL UPDATE через курсор, без ORM)
 	r.POST("/lighting-equipment/delete", h.DeleteLightingEquipment)
 }
 

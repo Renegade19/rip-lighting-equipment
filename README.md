@@ -23,7 +23,7 @@ internal/app/
   dsn/dsn.go                               # строка подключения к PostgreSQL
   ds/                                      # модели: светильник, проектировщик, лайк
   repository/repository.go                 # подключение к БД через gORM
-  repository/lighting_equipment.go         # запросы: 5 через ORM, удаление — SQL-курсор
+  repository/lighting_equipment.go         # запросы: 5 через ORM, удаление — SQL UPDATE через курсор
   handler/handler.go                       # маршруты
   handler/lighting_equipment.go            # шесть обработчиков
   handler/current_lighting_user.go         # текущий проектировщик (константа)
@@ -93,7 +93,7 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 | GET | `/lighting-equipment/draft` | ORM | черновик текущего проектировщика |
 | POST | `/lighting-equipment/draft` | ORM | кнопка «Далее» — создание черновика |
 | POST | `/lighting-equipment/publish` | ORM | кнопка «Опубликовать» — смена статуса + дата формирования |
-| POST | `/lighting-equipment/delete` | **SQL-курсор, без ORM** | логическое удаление с плитки |
+| POST | `/lighting-equipment/delete` | **SQL `UPDATE` через курсор, без ORM** | логическое удаление с плитки |
 
 С панели вкладок лента открывается без id — по адресу `/lighting-equipment/feed`
 (тот же обработчик, показывает первый опубликованный светильник).
@@ -103,8 +103,9 @@ docker-compose.yml                         # Minio, PostgreSQL, Adminer
 выполняется в SQL (`power_watt BETWEEN ? AND ?`). Если нижняя граница уведена
 выше верхней, обработчик меняет их местами.
 
-Удаление: в одной транзакции объявляется курсор `DECLARE ... CURSOR FOR SELECT ... FOR UPDATE`,
-строка читается через `FETCH`, статус меняется запросом `UPDATE ... WHERE CURRENT OF`.
+Удаление: статус меняется SQL-запросом `UPDATE ... RETURNING equipment_id`,
+который выполняется через курсор — `r.db.Raw(query, ...).Row()` возвращает
+строковый указатель на результат, `row.Scan` читает id удалённой строки.
 Запись остаётся в таблице.
 
 Текущий проектировщик зафиксирован константой в

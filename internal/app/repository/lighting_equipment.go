@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -115,60 +114,27 @@ func (r *Repository) PublishDraftLightingEquipment(creatorID int, shortDescripti
 	return r.db.Save(draft).Error
 }
 
-// 6. POST логического удаления: сырой SQL через курсор, без ORM.
+// 6. POST логического удаления: SQL-запрос UPDATE через курсор, без ORM.
 // Запись остаётся в таблице, меняется только статус.
-// Курсор объявляется с FOR UPDATE, строка читается через FETCH,
-// обновление идёт по позиции курсора (WHERE CURRENT OF) —
-// всё внутри одной транзакции, как того требует PostgreSQL
+// RETURNING возвращает id изменённой строки, курсор указывает на эту строку
 func (r *Repository) DeleteLightingEquipment(equipmentID int) error {
-	sqlDB, err := r.db.DB()
-	if err != nil {
-		return err
-	}
+	query := `UPDATE lighting_equipment
+	             SET equipment_status = ?
+	           WHERE equipment_id = ?
+	             AND equipment_status <> ?
+	       RETURNING equipment_id`
 
-	ctx := context.Background()
-	tx, err := sqlDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+	// Создание курсора (строковый указатель)
+	row := r.db.Raw(query,
+		ds.LightingEquipmentStatusDeleted, equipmentID, ds.LightingEquipmentStatusDeleted,
+	).Row()
 
-	_, err = tx.ExecContext(ctx,
-		`DECLARE lighting_equipment_cursor CURSOR FOR
-		   SELECT equipment_id
-		     FROM lighting_equipment
-		    WHERE equipment_id = $1
-		      AND equipment_status <> $2
-		      FOR UPDATE`,
-		equipmentID, ds.LightingEquipmentStatusDeleted,
-	)
-	if err != nil {
-		return err
-	}
-
-	// Читаем одну строку из курсора
-	var fetchedEquipmentID int
-	err = tx.QueryRowContext(ctx, `FETCH NEXT FROM lighting_equipment_cursor`).Scan(&fetchedEquipmentID)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	// Сканирование строки: id удалённого светильника
+	var deletedEquipmentID int
+	err := row.Scan(&deletedEquipmentID)
+	if errors.Is(err, sql.ErrNoRows) {
 		// Светильника нет или он уже удалён — обновлять нечего
-	case err != nil:
-		return err
-	default:
-		// Обновляем именно ту строку, на которой стоит курсор
-		_, err = tx.ExecContext(ctx,
-			`UPDATE lighting_equipment
-			    SET equipment_status = $1
-			  WHERE CURRENT OF lighting_equipment_cursor`,
-			ds.LightingEquipmentStatusDeleted,
-		)
-		if err != nil {
-			return err
-		}
+		return nil
 	}
-
-	if _, err = tx.ExecContext(ctx, `CLOSE lighting_equipment_cursor`); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return err
 }

@@ -117,7 +117,9 @@ SQL делится на группы:
 ```sql
 UPDATE lighting_equipment
    SET equipment_status = 'удалён'
- WHERE CURRENT OF lighting_equipment_cursor;
+ WHERE equipment_id = 3
+   AND equipment_status <> 'удалён'
+RETURNING equipment_id;
 ```
 
 Количество лайков считается подзапросом `COUNT(*)` к таблице связи,
@@ -125,21 +127,18 @@ UPDATE lighting_equipment
 
 ## 3. Курсоры
 
-**Курсор** — указатель на результирующий набор запроса, позволяющий читать строки
-по одной, не загружая весь результат в память. В PostgreSQL объявляется через
-`DECLARE ... CURSOR FOR` и читается `FETCH`. Нужен, когда выборка большая либо
-когда обработка строки зависит от предыдущей. Курсор живёт внутри транзакции.
+**Курсор** — указатель на строку результата запроса. Через него приложение
+выполняет сырой SQL-запрос и читает результат по одной строке, не загружая
+весь набор в память и не используя модели ORM. Преимущества: полный контроль
+над текстом запроса и экономия памяти на больших выборках.
 
 В проекте курсор используется при логическом удалении
 (`Repository.DeleteLightingEquipment`):
 
-1. `BEGIN` — транзакция через `database/sql`.
-2. `DECLARE lighting_equipment_cursor CURSOR FOR SELECT ... FOR UPDATE` —
-   курсор по строке светильника, строка блокируется от параллельных изменений.
-3. `FETCH NEXT FROM lighting_equipment_cursor` — чтение строки.
-4. `UPDATE ... WHERE CURRENT OF lighting_equipment_cursor` — изменение именно
-   той строки, на которой стоит курсор.
-5. `CLOSE` и `COMMIT`.
+1. `r.db.Raw(query, ...).Row()` — выполняется запрос `UPDATE ... RETURNING
+   equipment_id` и создаётся курсор (строковый указатель) на его результат.
+2. `row.Scan(&deletedEquipmentID)` — курсор читает id изменённой строки.
+3. `sql.ErrNoRows` — светильника нет или он уже удалён, менять нечего.
 
 ## 4. ORM
 
